@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/c/Users/Feng/miniconda3/python.exe -c \"from app.schemas.blocks import CheatsheetProject; import json; d = json.load\\(open\\('sample/sample_full.json', encoding='utf-8'\\)\\); p = CheatsheetProject\\(**d\\); print\\(f'OK: {len\\(p.blocks\\)} blocks'\\)\")",
+      "Bash(/c/Users/Feng/miniconda3/python.exe -c \"from app.schemas.blocks import CheatsheetProject; import json; d = json.load\\(open\\('sample/sample_full.json', encoding='utf-8'\\)\\); p = CheatsheetProject\\(**d\\); print\\(f'OK: {len\\(p.blocks\\)} blocks, {len\\(p.pages\\)} pages, first page mode={p.pages[0].mode}'\\)\")",
+      "Bash(xargs cat:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(echo \"exit code: $?\")",
+      "Bash(echo \"exit: $?\")"
+    ]
+  }
+}

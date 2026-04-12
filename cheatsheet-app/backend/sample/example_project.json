@@ -1,0 +1,6 @@
+{
+  "blocks": [
+    {"title": "Definition: Group", "content": "Closed under operation, associativity, identity element, inverse element."},
+    {"title": "Important formula", "content": "$e^{i\\pi} + 1 = 0$"}
+  ]
+}
