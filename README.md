@@ -25,14 +25,10 @@ Cheatsheet is a small full-stack project built for exam revision. Instead of pro
 
 ## Current Behavior
 
-- `List` mode:
-  Uses the backend `/api/export/latex` route for export.
-- `Mindmap` mode:
-  Uses browser print / "Save as PDF" instead of backend PDF generation.
-- Export fallback:
-  If `tectonic` or `pdflatex` is unavailable, the backend returns a `.tex` file instead of a PDF.
-- Extraction warnings:
-  If topic extraction is trimmed or some topic passes fail, the editor shows warnings instead of silently hiding that state.
+- `List` mode: uses the backend `/api/export/latex` route for export
+- `Mindmap` mode: uses browser print or "Save as PDF" instead of backend PDF generation
+- Export fallback: if `tectonic` or `pdflatex` is unavailable, the backend returns a `.tex` file instead of a PDF
+- Extraction warnings: if topic extraction is trimmed or some topic passes fail, the editor shows warnings instead of silently hiding that state
 
 ## Stack
 
@@ -57,9 +53,10 @@ Cheatsheet is a small full-stack project built for exam revision. Instead of pro
 
 ### 1. Backend
 
-From `backend/`:
+From the repository root:
 
 ```powershell
+cd cheatsheet-app/backend
 copy .env.example .env
 python -m pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -74,9 +71,10 @@ OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
 
 ### 2. Frontend
 
-From `frontend/`:
+From the repository root:
 
 ```powershell
+cd cheatsheet-app/frontend
 npm install
 npm run dev
 ```
@@ -143,26 +141,29 @@ Returns:
 ## Project Structure
 
 ```text
-cheatsheet-app/
-├─ backend/
-│  ├─ app/
-│  │  ├─ api/routes/
-│  │  ├─ prompts/
-│  │  ├─ renderer/
-│  │  ├─ schemas/
-│  │  └─ services/
-│  ├─ sample/
-│  └─ requirements.txt
-├─ frontend/
-│  ├─ src/
-│  │  ├─ components/
-│  │  ├─ pages/
-│  │  ├─ services/
-│  │  ├─ types/
-│  │  └─ utils/
-│  └─ package.json
-├─ start.md
-└─ README.md
+.
+|- .claude/
+|- cheatsheet-app/
+|  |- backend/
+|  |  |- app/
+|  |  |  |- api/routes/
+|  |  |  |- prompts/
+|  |  |  |- renderer/
+|  |  |  |- schemas/
+|  |  |  `- services/
+|  |  |- sample/
+|  |  `- requirements.txt
+|  |- frontend/
+|  |  |- src/
+|  |  |  |- components/
+|  |  |  |- pages/
+|  |  |  |- services/
+|  |  |  |- types/
+|  |  |  `- utils/
+|  |  `- package.json
+|  `- start.md
+|- .gitignore
+`- README.md
 ```
 
 ## Known Limits
@@ -177,6 +178,6 @@ cheatsheet-app/
 
 - Add regression tests for export payload validation and extractor warnings
 - Decide whether mindmap export should also move to the backend
-- Improve block editing beyond hide / move / lock interactions
-- Add project save / load support
+- Improve block editing beyond hide, move, and lock interactions
+- Add project save and load support
 - Refine README screenshots or demo media for GitHub presentation
