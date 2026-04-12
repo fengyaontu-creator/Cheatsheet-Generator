@@ -1,7 +1,7 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Block, Page } from '../../types/block'
 import { filterByImportance } from '../../utils/filterByImportance'
-import { buildTree, type TreeNode } from '../../utils/hierarchy'
+import { buildTree, orderBlocksByIds, type TreeNode } from '../../utils/hierarchy'
 import ListPreview, { BlockRender } from './ListPreview'
 import MindmapPreview, { TopicGroup } from './MindmapPreview'
 
@@ -36,7 +36,10 @@ export default function PagePreview({
     () => filterByImportance(blocks, importanceThreshold),
     [blocks, importanceThreshold],
   )
-  const listBlocks = filteredBlocks.filter((b) => page.block_ids.includes(b.id))
+  const listBlocks = useMemo(
+    () => orderBlocksByIds(filteredBlocks, page.block_ids),
+    [filteredBlocks, page.block_ids],
+  )
   const keptCount = filteredBlocks.filter((b) => b.type !== 'topic').length
   const totalContent = blocks.filter((b) => b.type !== 'topic').length
 
@@ -44,14 +47,31 @@ export default function PagePreview({
   const marginMm = page.layout.margin_mm
   const pageContentHeightMm = PAGE_H_MM - 2 * marginMm
   const contentWidthMm = PAGE_W_MM - 2 * marginMm
-  const columns = page.mode === 'list' ? page.layout.columns : 2
-  const columnGapMm = page.mode === 'list' ? 6 : 8
+  const columns =
+    page.mode === 'list'
+      ? page.layout.columns
+      : page.layout.orientation === 'horizontal'
+        ? 2
+        : 1
+  const columnGapMm = page.mode === 'list' ? 6 : page.layout.orientation === 'horizontal' ? 8 : 0
   const singleColWidthMm = (contentWidthMm - columnGapMm * (columns - 1)) / columns
 
   // Font config for measurement containers
   const fontSize = page.layout.font_size_pt
   const lineHeight = page.mode === 'list' ? page.layout.line_height : 1.22
   const densityLevel = page.layout.density_level
+  const mindmapIndent =
+    page.mode === 'mindmap'
+      ? `${Math.max(0.9, page.layout.level_gap_mm / 18).toFixed(2)}em`
+      : '1.2em'
+  const mindmapRowGap =
+    page.mode === 'mindmap'
+      ? `${Math.max(0.08, page.layout.sibling_gap_mm / 16).toFixed(2)}em`
+      : '0.2em'
+  const mindmapTopicGap =
+    page.mode === 'mindmap'
+      ? `${Math.max(0.4, page.layout.sibling_gap_mm / 4).toFixed(2)}em`
+      : '1em'
 
   // Build items: TreeNode[] for mindmap, Block[] for list
   const topicNodes = useMemo(() => {
@@ -73,14 +93,27 @@ export default function PagePreview({
   // Page assignments: array of index arrays
   const [pageGroups, setPageGroups] = useState<number[][]>([[]])
   const [localFit, setLocalFit] = useState<FitResult | null>(null)
+  const contentSignature = useMemo(
+    () =>
+      page.mode === 'mindmap'
+        ? topicNodes.map((node) => node.id).join('|')
+        : contentBlocks.map((block) => block.id).join('|'),
+    [page.mode, topicNodes, contentBlocks],
+  )
 
   useLayoutEffect(() => {
     const titleEl = titleRef.current
     const itemsEl = itemsRef.current
     if (!itemsEl || itemCount === 0) {
       const result: FitResult = { actualPages: 1, columnHeightMm: 0, pageContentHeightMm }
-      setPageGroups([[]])
-      setLocalFit(result)
+      setPageGroups((prev) => (prev.length === 1 && prev[0]?.length === 0 ? prev : [[]]))
+      setLocalFit((prev) =>
+        prev &&
+        prev.actualPages === result.actualPages &&
+        Math.abs(prev.columnHeightMm - result.columnHeightMm) < 1
+          ? prev
+          : result,
+      )
       onFitResult?.(result)
       return
     }
@@ -149,7 +182,22 @@ export default function PagePreview({
       return result
     })
     onFitResult?.(result)
-  })
+  }, [
+    itemCount,
+    columns,
+    pageContentHeightMm,
+    singleColWidthMm,
+    contentWidthMm,
+    fontSize,
+    lineHeight,
+    densityLevel,
+    mindmapIndent,
+    mindmapRowGap,
+    mindmapTopicGap,
+    documentTitle,
+    contentSignature,
+    onFitResult,
+  ])
 
   // Derived state
   const actualPages = pageGroups.length
@@ -217,12 +265,17 @@ export default function PagePreview({
         </div>
         {/* Items at single-column width */}
         <div ref={itemsRef} style={{ width: `${singleColWidthMm}mm`, ...measureFontStyle }}>
-          {page.mode === 'mindmap'
-            ? topicNodes.map((node) => (
-                <div key={node.id}>
-                  <TopicGroup node={node} />
-                </div>
-              ))
+              {page.mode === 'mindmap'
+                ? topicNodes.map((node) => (
+                    <div key={node.id}>
+                      <TopicGroup
+                        node={node}
+                        indent={mindmapIndent}
+                        rowGap={mindmapRowGap}
+                        topicGap={mindmapTopicGap}
+                      />
+                    </div>
+                  ))
             : contentBlocks.map((block) => (
                 <div key={block.id}>
                   <BlockRender block={block} densityLevel={densityLevel} />

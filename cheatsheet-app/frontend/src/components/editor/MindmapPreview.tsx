@@ -9,8 +9,21 @@ interface Props {
   showTitle?: boolean
 }
 
-export default function MindmapPreview({ documentTitle, blocks, layout, showTitle = true }: Props) {
+export default function MindmapPreview({
+  documentTitle,
+  blocks,
+  layout,
+  showTitle = true,
+}: Props) {
   const root = useMemo(() => buildTree(blocks, documentTitle), [blocks, documentTitle])
+  const layoutMetrics = useMemo(
+    () => ({
+      indent: `${Math.max(0.9, layout.level_gap_mm / 18).toFixed(2)}em`,
+      rowGap: `${Math.max(0.08, layout.sibling_gap_mm / 16).toFixed(2)}em`,
+      topicGap: `${Math.max(0.4, layout.sibling_gap_mm / 4).toFixed(2)}em`,
+    }),
+    [layout.level_gap_mm, layout.sibling_gap_mm],
+  )
 
   const pageStyle: React.CSSProperties = {
     fontSize: `${layout.font_size_pt}pt`,
@@ -30,9 +43,10 @@ export default function MindmapPreview({ documentTitle, blocks, layout, showTitl
   }
 
   const columnsStyle: React.CSSProperties = {
-    columnCount: 2,
-    columnGap: '8mm',
-    columnRule: '1px dashed #d0d7de',
+    columnCount: layout.orientation === 'horizontal' ? 2 : 1,
+    columnGap: layout.orientation === 'horizontal' ? '8mm' : 0,
+    columnRule:
+      layout.orientation === 'horizontal' ? '1px dashed #d0d7de' : 'none',
     columnFill: 'balance',
     overflowWrap: 'break-word',
   }
@@ -42,27 +56,56 @@ export default function MindmapPreview({ documentTitle, blocks, layout, showTitl
       {showTitle && <h1 style={titleStyle}>{documentTitle}</h1>}
       <div style={columnsStyle}>
         {root.children.map((topic) => (
-          <TopicGroup key={topic.id} node={topic} />
+          <TopicGroup
+            key={topic.id}
+            node={topic}
+            indent={layoutMetrics.indent}
+            rowGap={layoutMetrics.rowGap}
+            topicGap={layoutMetrics.topicGap}
+          />
         ))}
       </div>
     </div>
   )
 }
 
-export function TopicGroup({ node }: { node: TreeNode }) {
+export function TopicGroup({
+  node,
+  indent,
+  rowGap,
+  topicGap,
+}: {
+  node: TreeNode
+  indent: string
+  rowGap: string
+  topicGap: string
+}) {
   return (
-    <div style={topicGroupStyle}>
+    <div style={{ ...topicGroupStyle, marginBottom: topicGap }}>
       <div style={topicHeaderStyle}>{node.title}</div>
-      <div style={childrenWrapStyle}>
+      <div style={{ ...childrenWrapStyle, paddingLeft: indent }}>
         {node.children.map((child) => (
-          <BlockLine key={child.id} node={child} />
+          <BlockLine
+            key={child.id}
+            node={child}
+            indent={indent}
+            rowGap={rowGap}
+          />
         ))}
       </div>
     </div>
   )
 }
 
-function BlockLine({ node }: { node: TreeNode }) {
+function BlockLine({
+  node,
+  indent,
+  rowGap,
+}: {
+  node: TreeNode
+  indent: string
+  rowGap: string
+}) {
   const block = node.block
   const subtitle =
     block && block.type !== 'topic'
@@ -71,17 +114,20 @@ function BlockLine({ node }: { node: TreeNode }) {
 
   return (
     <div>
-      <div style={rowStyle}>
+      <div style={{ ...rowStyle, marginBottom: rowGap }}>
         <span style={connectorStyle} />
         <span style={blockTitleStyle}>{node.title}</span>
-        {subtitle && (
-          <span style={subtitleStyle}> — {subtitle}</span>
-        )}
+        {subtitle && <span style={subtitleStyle}> 鈥?{subtitle}</span>}
       </div>
       {node.children.length > 0 && (
-        <div style={childrenWrapStyle}>
+        <div style={{ ...childrenWrapStyle, paddingLeft: indent }}>
           {node.children.map((child) => (
-            <BlockLine key={child.id} node={child} />
+            <BlockLine
+              key={child.id}
+              node={child}
+              indent={indent}
+              rowGap={rowGap}
+            />
           ))}
         </div>
       )}
@@ -91,7 +137,6 @@ function BlockLine({ node }: { node: TreeNode }) {
 
 const topicGroupStyle: React.CSSProperties = {
   breakInside: 'avoid',
-  marginBottom: '0.55em',
 }
 
 const topicHeaderStyle: React.CSSProperties = {
@@ -105,13 +150,11 @@ const topicHeaderStyle: React.CSSProperties = {
 
 const childrenWrapStyle: React.CSSProperties = {
   marginLeft: '0.35em',
-  paddingLeft: '0.75em',
   borderLeft: '1px solid #8b949e',
 }
 
 const rowStyle: React.CSSProperties = {
   position: 'relative',
-  marginBottom: '0.08em',
 }
 
 const connectorStyle: React.CSSProperties = {

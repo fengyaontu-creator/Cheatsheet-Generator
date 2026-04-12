@@ -11,6 +11,13 @@ import type {
 import BlockSidebar from '../components/editor/BlockSidebar'
 import PagePreview, { type FitResult } from '../components/editor/PagePreview'
 import ControlPanel from '../components/editor/ControlPanel'
+import {
+  blocksToExportPayload,
+  exportDocument,
+} from '../services/api'
+import { pickVersion } from '../utils/density'
+import { filterByImportance } from '../utils/filterByImportance'
+import { collectDescendantIds, orderBlocksByIds } from '../utils/hierarchy'
 
 const FIT_STEP = 0.05
 
@@ -23,8 +30,11 @@ const DEFAULT_LIST_LAYOUT: ListLayout = {
 }
 
 const DEFAULT_MINDMAP_LAYOUT: MindmapLayout = {
+  orientation: 'horizontal',
   font_size_pt: 8,
   margin_mm: 12,
+  level_gap_mm: 42,
+  sibling_gap_mm: 7,
   density_level: 3,
 }
 
@@ -39,10 +49,17 @@ export default function EditorPage() {
   )
   const [lastFit, setLastFit] = useState<FitResult | null>(null)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
+  const [exporting, setExporting] = useState(false)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
   const activePageIdx = 0
   const page = project.pages[activePageIdx]
 
   const visibleBlocks = project.blocks.filter((b) => !hiddenIds.has(b.id))
+  const exportableBlocks = orderBlocksByIds(
+    filterByImportance(visibleBlocks, importanceThreshold),
+    page.block_ids,
+  ).filter((b) => b.type !== 'topic')
 
   useEffect(() => {
     if (fitMode === 'auto') {
@@ -138,7 +155,9 @@ export default function EditorPage() {
   function deleteBlock(id: string) {
     setHiddenIds((prev) => {
       const next = new Set(prev)
-      next.add(id)
+      for (const blockId of collectDescendantIds(project.blocks, id)) {
+        next.add(blockId)
+      }
       return next
     })
   }
@@ -146,7 +165,9 @@ export default function EditorPage() {
   function restoreBlock(id: string) {
     setHiddenIds((prev) => {
       const next = new Set(prev)
-      next.delete(id)
+      for (const blockId of collectDescendantIds(project.blocks, id)) {
+        next.delete(blockId)
+      }
       return next
     })
   }
@@ -158,8 +179,47 @@ export default function EditorPage() {
     }))
   }
 
-  function handleExport() {
-    window.print()
+  async function handleExport() {
+    setExportError(null)
+    setStatusMessage(null)
+
+    if (page.mode !== 'list') {
+      window.print()
+      return
+    }
+
+    if (exportableBlocks.length === 0) {
+      setExportError('No visible content to export.')
+      return
+    }
+
+    setExporting(true)
+    try {
+      const result = await exportDocument({
+        document_title: project.document_title,
+        blocks: blocksToExportPayload(exportableBlocks, (block) =>
+          pickVersion(block, page.layout.density_level),
+        ),
+        cols: page.layout.columns,
+        margin_mm: Math.round(page.layout.margin_mm),
+      })
+      const extension = result.isTexFallback ? 'tex' : 'pdf'
+      const url = URL.createObjectURL(result.blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `${slugify(project.document_title)}.${extension}`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      if (result.isTexFallback) {
+        setStatusMessage(
+          'PDF compiler was unavailable, so the export fell back to a .tex file.',
+        )
+      }
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -169,10 +229,26 @@ export default function EditorPage() {
           ← Cheatsheet
         </Link>
         <h2 style={styles.docTitle}>{project.document_title}</h2>
-        <button style={styles.exportBtn} onClick={handleExport}>
-          Export PDF
+        <button style={styles.exportBtn} onClick={handleExport} disabled={exporting}>
+          {page.mode === 'list'
+            ? exporting
+              ? 'Exporting...'
+              : 'Export PDF'
+            : 'Print / Save PDF'}
         </button>
       </header>
+
+      {(project.warnings?.length || exportError || statusMessage) && (
+        <div className="no-print" style={styles.noticeStack}>
+          {project.warnings?.map((warning) => (
+            <div key={warning} style={styles.warningBanner}>
+              {warning}
+            </div>
+          ))}
+          {statusMessage && <div style={styles.infoBanner}>{statusMessage}</div>}
+          {exportError && <div style={styles.errorBanner}>{exportError}</div>}
+        </div>
+      )}
 
       <div className="no-print">
         <ControlPanel
@@ -252,6 +328,37 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     fontWeight: 600,
   },
+  noticeStack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    padding: '12px 20px 0',
+    background: '#f4f5f7',
+  },
+  warningBanner: {
+    padding: '10px 12px',
+    borderRadius: 8,
+    background: '#fff8c5',
+    color: '#7d4e00',
+    border: '1px solid #d4a72c',
+    fontSize: 13,
+  },
+  infoBanner: {
+    padding: '10px 12px',
+    borderRadius: 8,
+    background: '#ddf4ff',
+    color: '#0550ae',
+    border: '1px solid #54aeff',
+    fontSize: 13,
+  },
+  errorBanner: {
+    padding: '10px 12px',
+    borderRadius: 8,
+    background: '#ffebe9',
+    color: '#cf222e',
+    border: '1px solid #ff8182',
+    fontSize: 13,
+  },
   main: {
     flex: 1,
     display: 'flex',
@@ -262,4 +369,12 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexShrink: 0,
   },
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'cheatsheet'
 }

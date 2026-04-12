@@ -80,3 +80,4 @@ class CheatsheetProject(BaseModel):
     exam_profile: ExamProfile = ExamProfile()
     blocks: List[Block]
     pages: List[Page]
+    warnings: List[str] = Field(default_factory=list)

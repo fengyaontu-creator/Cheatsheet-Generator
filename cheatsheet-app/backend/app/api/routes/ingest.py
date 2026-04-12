@@ -6,9 +6,12 @@ from app.services.extractor import extract_project
 router = APIRouter()
 
 
+MAX_SOURCE_LENGTH = 50_000  # ~12k tokens, enough for several lectures
+
+
 class IngestTextRequest(BaseModel):
-    source_text: str = Field(min_length=1)
-    user_focus: str = ""
+    source_text: str = Field(min_length=1, max_length=MAX_SOURCE_LENGTH)
+    user_focus: str = Field(default="", max_length=500)
 
 
 @router.post("/ingest/text")

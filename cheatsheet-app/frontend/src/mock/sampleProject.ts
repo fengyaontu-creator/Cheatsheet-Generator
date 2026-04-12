@@ -2,6 +2,7 @@ import type { CheatsheetProject } from '../types/block'
 
 export const sampleProject: CheatsheetProject = {
   document_title: 'ML Evaluation Metrics Cheatsheet',
+  warnings: [],
   exam_profile: {
     exam_type: 'MCQ',
     target_pages: 2,

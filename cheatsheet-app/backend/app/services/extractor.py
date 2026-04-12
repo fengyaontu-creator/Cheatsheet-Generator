@@ -18,11 +18,14 @@ from app.services.outline_parser import parse_outline
 
 VALID_BLOCK_TYPES = {bt.value for bt in BlockType if bt.value != "topic"}
 VALID_COMPRESSIBILITY = {c.value for c in Compressibility}
+MAX_TOPICS = 12
+MAX_WORKERS = 4
 
 
 async def extract_project(source_text: str, user_focus: str) -> CheatsheetProject:
     client = LLMClient()
     focus = user_focus.strip() or "none"
+    warnings: list[str] = []
 
     # Stage 1: topic extraction (unchanged)
     outline = await asyncio.to_thread(_extract_topics, client, source_text, focus)
@@ -31,11 +34,15 @@ async def extract_project(source_text: str, user_focus: str) -> CheatsheetProjec
     if not raw_topics:
         raise ValueError("LLM returned no topics — source may be too short or unparseable")
 
-    topics = [_normalize_topic(t, idx) for idx, t in enumerate(raw_topics)]
+    if len(raw_topics) > MAX_TOPICS:
+        warnings.append(
+            f"Trimmed topic extraction from {len(raw_topics)} to {MAX_TOPICS} topics for stability."
+        )
+    topics = [_normalize_topic(t, idx) for idx, t in enumerate(raw_topics[:MAX_TOPICS])]
 
     # Stage 2: hierarchical outline extraction per topic (parallel)
     loop = asyncio.get_running_loop()
-    with ThreadPoolExecutor(max_workers=min(4, len(topics))) as pool:
+    with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(topics))) as pool:
         futures = [
             loop.run_in_executor(
                 pool, _extract_outline_for_topic, client, source_text, focus, t
@@ -45,6 +52,7 @@ async def extract_project(source_text: str, user_focus: str) -> CheatsheetProjec
         results = await asyncio.gather(*futures, return_exceptions=True)
 
     all_blocks: list[Block] = []
+    failed_topics: list[str] = []
     for topic, result in zip(topics, results):
         topic_block = Block(
             id=topic["id"],
@@ -59,11 +67,21 @@ async def extract_project(source_text: str, user_focus: str) -> CheatsheetProjec
         all_blocks.append(topic_block)
 
         if isinstance(result, Exception):
+            failed_topics.append(topic["title"])
             continue
         for raw_block in result:
             block = _normalize_outline_block(raw_block)
             if block is not None:
                 all_blocks.append(block)
+
+    if failed_topics:
+        warnings.append(
+            "Failed to extract some topics: " + ", ".join(failed_topics[:4])
+            + ("." if len(failed_topics) <= 4 else ", and more.")
+        )
+
+    if not any(b.type != BlockType.topic for b in all_blocks):
+        raise RuntimeError("All topic outline extraction passes failed.")
 
     content_ids = [b.id for b in all_blocks if b.type != BlockType.topic]
     list_page = ListPage(
@@ -84,6 +102,7 @@ async def extract_project(source_text: str, user_focus: str) -> CheatsheetProjec
         exam_profile=ExamProfile(),
         blocks=all_blocks,
         pages=[list_page, mindmap_page],
+        warnings=warnings,
     )
 
 

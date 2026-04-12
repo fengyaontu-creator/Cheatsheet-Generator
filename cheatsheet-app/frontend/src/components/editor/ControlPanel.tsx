@@ -78,10 +78,10 @@ function PageFitControl({
 }) {
   const actual = lastFit?.actualPages ?? targetPages
   const overflow = lastFit ? lastFit.actualPages > targetPages : false
-  const statusLabel = `${fitMode === 'auto' ? 'auto' : 'manual'} · ${actual}/${targetPages}${overflow ? ' ⚠' : ''}`
+  const statusLabel = `${fitMode === 'auto' ? 'auto' : 'manual'} / ${actual}/${targetPages}${overflow ? ' !' : ''}`
 
   return (
-    <Control label={`Target pages · ${statusLabel}`}>
+    <Control label={`Target pages / ${statusLabel}`}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <input
           type="number"
@@ -100,7 +100,11 @@ function PageFitControl({
             ...(fitMode === 'auto' ? styles.autoBtnActive : {}),
             ...(overflow ? styles.autoBtnWarn : {}),
           }}
-          title={overflow ? 'Content overflows target pages — click to auto-fit' : 'Auto-fit content to target pages'}
+          title={
+            overflow
+              ? 'Content overflows target pages - click to auto-fit'
+              : 'Auto-fit content to target pages'
+          }
         >
           Auto
         </button>
@@ -120,7 +124,7 @@ function ImportanceControl({
 }) {
   const pct = Math.round(threshold * 100)
   return (
-    <Control label={`Importance ≥ ${threshold.toFixed(2)} · ${totalBlocks} total`}>
+    <Control label={`Importance >= ${threshold.toFixed(2)} / ${totalBlocks} total`}>
       <input
         type="range"
         min={0}
@@ -180,7 +184,7 @@ function ListControls({
 
   return (
     <>
-      <Control label={`Density · ${densityLabel(layout.density_level)}`}>
+      <Control label={`Density / ${densityLabel(layout.density_level)}`}>
         <input
           type="range"
           min={1}
@@ -257,7 +261,7 @@ function MindmapControls({
 
   return (
     <>
-      <Control label={`Density · ${densityLabel(layout.density_level)}`}>
+      <Control label={`Density / ${densityLabel(layout.density_level)}`}>
         <input
           type="range"
           min={1}
@@ -267,6 +271,19 @@ function MindmapControls({
           onChange={(e) => handleDensity(Number(e.target.value))}
           style={{ width: 140 }}
         />
+      </Control>
+
+      <Control label="Direction">
+        <select
+          value={layout.orientation}
+          onChange={(e) =>
+            onChange({ orientation: e.target.value as MindmapLayout['orientation'] })
+          }
+          style={styles.select}
+        >
+          <option value="horizontal">Horizontal</option>
+          <option value="vertical">Vertical</option>
+        </select>
       </Control>
 
       <Control label="Font pt">
@@ -289,6 +306,30 @@ function MindmapControls({
           max={25}
           value={layout.margin_mm}
           onChange={(e) => onChange({ margin_mm: Number(e.target.value) })}
+          style={styles.num}
+        />
+      </Control>
+
+      <Control label="Level gap">
+        <input
+          type="number"
+          step={1}
+          min={16}
+          max={80}
+          value={layout.level_gap_mm}
+          onChange={(e) => onChange({ level_gap_mm: Number(e.target.value) })}
+          style={styles.num}
+        />
+      </Control>
+
+      <Control label="Sibling gap">
+        <input
+          type="number"
+          step={0.5}
+          min={2}
+          max={20}
+          value={layout.sibling_gap_mm}
+          onChange={(e) => onChange({ sibling_gap_mm: Number(e.target.value) })}
           style={styles.num}
         />
       </Control>

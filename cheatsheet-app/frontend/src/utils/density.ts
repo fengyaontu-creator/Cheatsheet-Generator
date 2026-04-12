@@ -38,15 +38,15 @@ export function layoutPresetForDensity(level: number): Partial<ListLayout> {
 export function mindmapPresetForDensity(level: number): Partial<MindmapLayout> {
   switch (level) {
     case 1:
-      return { font_size_pt: 10 }
+      return { font_size_pt: 10, level_gap_mm: 52, sibling_gap_mm: 10 }
     case 2:
-      return { font_size_pt: 9 }
+      return { font_size_pt: 9, level_gap_mm: 46, sibling_gap_mm: 8 }
     case 3:
-      return { font_size_pt: 8 }
+      return { font_size_pt: 8, level_gap_mm: 42, sibling_gap_mm: 7 }
     case 4:
-      return { font_size_pt: 7 }
+      return { font_size_pt: 7, level_gap_mm: 36, sibling_gap_mm: 5.5 }
     case 5:
-      return { font_size_pt: 6 }
+      return { font_size_pt: 6, level_gap_mm: 32, sibling_gap_mm: 4.5 }
     default:
       return {}
   }

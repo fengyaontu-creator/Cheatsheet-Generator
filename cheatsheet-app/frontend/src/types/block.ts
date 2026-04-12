@@ -42,8 +42,11 @@ export interface ListLayout {
 }
 
 export interface MindmapLayout {
+  orientation: 'horizontal' | 'vertical'
   font_size_pt: number
   margin_mm: number
+  level_gap_mm: number
+  sibling_gap_mm: number
   density_level: DensityLevel
 }
 
@@ -58,6 +61,7 @@ export interface CheatsheetProject {
   exam_profile: ExamProfile
   blocks: Block[]
   pages: Page[]
+  warnings?: string[]
 }
 
 export type DensityVersion = 'full' | 'short' | 'ultra_short'
