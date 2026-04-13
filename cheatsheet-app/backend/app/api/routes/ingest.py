@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from app.services.extractor import extract_project
@@ -20,10 +20,15 @@ class IngestTextRequest(BaseModel):
 
 
 @router.post("/ingest/text")
-async def ingest_text(payload: IngestTextRequest):
+async def ingest_text(
+    payload: IngestTextRequest,
+    debug: bool = Query(False),
+):
     lang = payload.language if payload.language in VALID_LANGUAGES else "en"
     try:
-        project = await extract_project(payload.source_text, payload.user_focus, lang)
+        project = await extract_project(
+            payload.source_text, payload.user_focus, lang, debug=debug
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except ValueError as e:
@@ -36,6 +41,7 @@ async def ingest_pdf(
     file: UploadFile = File(...),
     user_focus: str = Form(""),
     language: str = Form("en"),
+    debug: bool = Query(False),
 ):
     if file.content_type not in ("application/pdf", "application/x-pdf"):
         raise HTTPException(status_code=422, detail="Only PDF files are accepted.")
@@ -60,7 +66,7 @@ async def ingest_pdf(
     lang = language if language in VALID_LANGUAGES else "en"
 
     try:
-        project = await extract_project(source_text, user_focus, lang)
+        project = await extract_project(source_text, user_focus, lang, debug=debug)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except ValueError as e:
