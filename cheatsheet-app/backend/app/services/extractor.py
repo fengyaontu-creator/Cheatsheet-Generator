@@ -45,7 +45,7 @@ async def extract_project(source_text: str, user_focus: str) -> CheatsheetProjec
     with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(topics))) as pool:
         futures = [
             loop.run_in_executor(
-                pool, _extract_outline_for_topic, client, source_text, focus, t
+                pool, _extract_outline_for_topic, client, source_text, focus, t, topics
             )
             for t in topics
         ]
@@ -132,15 +132,22 @@ def _extract_outline_for_topic(
     source_text: str,
     user_focus: str,
     topic: dict[str, Any],
+    all_topics: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     system = load_prompt("system")
     template = load_prompt("extract_outline")
+    other_topics = "\n".join(
+        f"- {t['title']}" for t in all_topics if t["id"] != topic["id"]
+    ) or "- none"
+    anchor_terms = ", ".join(topic.get("anchor_terms") or []) or "none"
     user = (
         template.replace("{user_focus}", user_focus)
         .replace("{source_text}", source_text)
         .replace("{topic_id}", topic["id"])
         .replace("{topic_title}", topic["title"])
         .replace("{topic_importance}", str(topic["importance"]))
+        .replace("{topic_anchor_terms}", anchor_terms)
+        .replace("{other_topics}", other_topics)
     )
     raw_markdown = client.complete(system, user)
     return parse_outline(raw_markdown, topic["id"])
@@ -156,7 +163,20 @@ def _normalize_topic(raw: dict[str, Any], idx: int) -> dict[str, Any]:
     title = str(raw.get("title") or f"Topic {idx + 1}").strip()
     importance = _clamp01(raw.get("importance"), default=0.5)
     must_keep = bool(raw.get("must_keep", False))
-    return {"id": tid, "title": title, "importance": importance, "must_keep": must_keep}
+    anchor_terms_raw = raw.get("anchor_terms")
+    if isinstance(anchor_terms_raw, list):
+        anchor_terms = [
+            str(term).strip() for term in anchor_terms_raw if str(term).strip()
+        ]
+    else:
+        anchor_terms = []
+    return {
+        "id": tid,
+        "title": title,
+        "importance": importance,
+        "must_keep": must_keep,
+        "anchor_terms": anchor_terms[:8],
+    }
 
 
 def _normalize_outline_block(raw: dict[str, Any]) -> Block | None:

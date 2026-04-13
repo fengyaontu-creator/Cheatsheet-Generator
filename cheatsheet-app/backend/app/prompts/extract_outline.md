@@ -7,6 +7,13 @@ Read the SOURCE MATERIAL and extract all exam-worthy content for the topic below
 - id: `{topic_id}`
 - title: `{topic_title}`
 - topic importance: `{topic_importance}`
+- anchor terms: `{topic_anchor_terms}`
+
+## Sibling topics
+
+These topics are handled elsewhere. Do not repeat their core content unless a very short contrast is essential.
+
+{other_topics}
 
 ## User focus
 
@@ -76,6 +83,13 @@ In 2008, static risk budgets led to 40%+ drawdowns. Adaptive budgets cut losses 
 - Aim for **3-10 blocks** at the `##` level. Each `##` may have 0-5 sub-blocks.
 - Encourage **2-3 levels** of nesting where the content naturally supports it. Sub-procedures, sub-definitions, examples under a concept — these belong as `###` children. Don't force nesting where a flat list is natural.
 - Three density versions are **required** for every block.
+- Stay tightly inside the current topic boundary. If a fact belongs more naturally to a sibling topic, omit it here.
+- Prefer blocks with concrete exam value: formulas, assumptions, trigger phrases, contrasts, edge cases, variable meanings, or step sequences.
+- Avoid generic filler such as "X is important", "used in many applications", "measures performance", or textbook intros that add no exam leverage.
+- If the source has thin coverage for this topic, return fewer blocks rather than padding with vague summaries.
+- For `formula` blocks, the main paragraph should explain what the expression is for, when it is used, and what the key symbols mean when that information exists in the source.
+- For `comparison` blocks, use crisp A vs B language and include the actual tradeoff or discriminating condition.
+- For `pitfall` and `exam_tip`, prefer "if you see X, think Y" style cues over broad advice.
 - `compressibility`: `low` = formulas, precise definitions, exact values; `medium` = normal prose; `high` = examples, elaborations, context (drop first when space is tight).
 - `importance` is local to this topic. Core formulas and definitions = 0.9+; background examples = 0.4-0.6.
 - `must_keep`: at most 1-2 blocks per topic. TRUE only for blocks that would make the cheatsheet useless if omitted.

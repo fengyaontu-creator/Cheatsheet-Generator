@@ -11,15 +11,8 @@ import type {
 import BlockSidebar from '../components/editor/BlockSidebar'
 import PagePreview, { type FitResult } from '../components/editor/PagePreview'
 import ControlPanel from '../components/editor/ControlPanel'
-import {
-  blocksToExportPayload,
-  exportDocument,
-} from '../services/api'
-import { pickVersion } from '../utils/density'
-import { filterByImportance } from '../utils/filterByImportance'
-import { collectDescendantIds, orderBlocksByIds } from '../utils/hierarchy'
-
-const FIT_STEP = 0.05
+import { exportPdf } from '../services/api'
+import { collectDescendantIds } from '../utils/hierarchy'
 
 const DEFAULT_LIST_LAYOUT: ListLayout = {
   columns: 2,
@@ -56,10 +49,6 @@ export default function EditorPage() {
   const page = project.pages[activePageIdx]
 
   const visibleBlocks = project.blocks.filter((b) => !hiddenIds.has(b.id))
-  const exportableBlocks = orderBlocksByIds(
-    filterByImportance(visibleBlocks, importanceThreshold),
-    page.block_ids,
-  ).filter((b) => b.type !== 'topic')
 
   useEffect(() => {
     if (fitMode === 'auto') {
@@ -79,14 +68,11 @@ export default function EditorPage() {
         }
         return result
       })
-      if (fitMode === 'auto' && result.actualPages > targetPages) {
-        setImportanceThreshold((t) => {
-          if (t >= 1) return t
-          return Math.min(1, Math.round((t + FIT_STEP) * 100) / 100)
-        })
+      if (result.autoFitThreshold != null) {
+        setImportanceThreshold(result.autoFitThreshold)
       }
     },
-    [fitMode, targetPages],
+    [],
   )
 
   function handleThresholdSlider(v: number) {
@@ -183,38 +169,50 @@ export default function EditorPage() {
     setExportError(null)
     setStatusMessage(null)
 
-    if (page.mode !== 'list') {
-      window.print()
+    // Grab all rendered page cards from the DOM
+    const pages = document.querySelectorAll('.print-page')
+    if (pages.length === 0) {
+      setExportError('No content to export.')
       return
     }
 
-    if (exportableBlocks.length === 0) {
-      setExportError('No visible content to export.')
-      return
-    }
+    const stylesheets = await collectStylesForExport(document.styleSheets)
+
+    // Build self-contained HTML with only the page cards
+    const pagesHtml = Array.from(pages)
+      .filter((el) => !el.classList.contains('no-print'))
+      .map((el) => el.outerHTML)
+      .join('\n')
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+${stylesheets}
+.print-page {
+  page-break-after: always;
+  break-after: page;
+  box-shadow: none !important;
+}
+.print-page:last-child {
+  page-break-after: auto;
+  break-after: auto;
+}
+.no-print { display: none !important; }
+</style>
+</head><body>${pagesHtml}</body></html>`
 
     setExporting(true)
     try {
-      const result = await exportDocument({
-        document_title: project.document_title,
-        blocks: blocksToExportPayload(exportableBlocks, (block) =>
-          pickVersion(block, page.layout.density_level),
-        ),
-        cols: page.layout.columns,
-        margin_mm: Math.round(page.layout.margin_mm),
-      })
-      const extension = result.isTexFallback ? 'tex' : 'pdf'
-      const url = URL.createObjectURL(result.blob)
+      const blob = await exportPdf(html)
+      const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `${slugify(project.document_title)}.${extension}`
+      anchor.download = `${slugify(project.document_title)}.pdf`
+      document.body.appendChild(anchor)
       anchor.click()
-      URL.revokeObjectURL(url)
-      if (result.isTexFallback) {
-        setStatusMessage(
-          'PDF compiler was unavailable, so the export fell back to a .tex file.',
-        )
-      }
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
     } catch (err) {
       setExportError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -230,11 +228,7 @@ export default function EditorPage() {
         </Link>
         <h2 style={styles.docTitle}>{project.document_title}</h2>
         <button style={styles.exportBtn} onClick={handleExport} disabled={exporting}>
-          {page.mode === 'list'
-            ? exporting
-              ? 'Exporting...'
-              : 'Export PDF'
-            : 'Print / Save PDF'}
+          {exporting ? 'Exporting...' : 'Export PDF'}
         </button>
       </header>
 
@@ -284,6 +278,7 @@ export default function EditorPage() {
           page={page}
           importanceThreshold={importanceThreshold}
           targetPages={targetPages}
+          fitMode={fitMode}
           onFitResult={handleFitResult}
         />
       </main>
@@ -374,7 +369,86 @@ const styles: Record<string, React.CSSProperties> = {
 function slugify(value: string): string {
   return value
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60) || 'cheatsheet'
+}
+
+async function collectStylesForExport(styleSheets: StyleSheetList): Promise<string> {
+  const cache = new Map<string, Promise<string>>()
+  const chunks = await Promise.all(
+    Array.from(styleSheets).map(async (sheet) => {
+      const cssSheet = sheet as CSSStyleSheet
+      try {
+        const cssText = Array.from(cssSheet.cssRules)
+          .map((rule) => rule.cssText)
+          .join('\n')
+        return await inlineCssUrls(cssText, cssSheet.href ?? window.location.href, cache)
+      } catch {
+        return ''
+      }
+    }),
+  )
+  return chunks.filter(Boolean).join('\n')
+}
+
+async function inlineCssUrls(
+  cssText: string,
+  baseUrl: string,
+  cache: Map<string, Promise<string>>,
+): Promise<string> {
+  const matches = Array.from(cssText.matchAll(/url\(([^)]+)\)/g))
+  if (matches.length === 0) return cssText
+
+  const replacements = await Promise.all(
+    matches.map(async (match) => {
+      const rawUrl = match[1]?.trim().replace(/^['"]|['"]$/g, '')
+      if (!rawUrl || rawUrl.startsWith('data:') || rawUrl.startsWith('blob:') || rawUrl.startsWith('#')) {
+        return match[0]
+      }
+
+      let resolvedUrl: string
+      try {
+        resolvedUrl = new URL(rawUrl, baseUrl).toString()
+      } catch {
+        return match[0]
+      }
+
+      if (!cache.has(resolvedUrl)) {
+        cache.set(
+          resolvedUrl,
+          fetch(resolvedUrl)
+            .then((res) => {
+              if (!res.ok) {
+                throw new Error(`Failed to fetch asset: ${resolvedUrl}`)
+              }
+              return res.blob()
+            })
+            .then(blobToDataUrl),
+        )
+      }
+
+      try {
+        const dataUrl = await cache.get(resolvedUrl)!
+        return `url("${dataUrl}")`
+      } catch {
+        return match[0]
+      }
+    }),
+  )
+
+  let nextCss = cssText
+  for (let i = 0; i < matches.length; i++) {
+    nextCss = nextCss.replace(matches[i][0], replacements[i])
+  }
+  return nextCss
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
 }

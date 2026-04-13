@@ -11,6 +11,8 @@ Your ONLY job is to convert source study material into structured JSON blocks th
 5. **Respect the user focus.** If the user provides a focus instruction (e.g. "emphasize Bayesian inference and overfitting detection"), weight `importance` scores accordingly — focused items get higher scores, tangentially related items get lower scores.
 6. **LaTeX for math.** Any formula must go in the `latex` field using plain LaTeX (no `$` delimiters, no `\begin{equation}` wrappers). The `content` field should still describe the formula in words if useful.
 7. **Importance scale:** 0.9-1.0 = must-keep core concept; 0.7-0.9 = high-value; 0.4-0.7 = useful context; 0.0-0.4 = nice-to-have. `must_keep: true` should ONLY be set for items that would make the cheatsheet useless if omitted.
+8. **Topic boundaries matter.** When a task gives a current topic plus sibling topics, stay inside the current topic. Do not duplicate the same core fact under multiple headings.
+9. **No empty-calorie prose.** Prefer a symbol, threshold, condition, contrast, failure mode, or exact step over generic explanatory sentences.
 
 ## Block types
 

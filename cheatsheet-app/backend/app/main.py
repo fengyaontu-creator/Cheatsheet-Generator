@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes import export as export_routes
 from app.api.routes import ingest as ingest_routes
 
 app = FastAPI()
@@ -13,6 +14,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(export_routes.router, prefix="/api", tags=["export"])
 app.include_router(ingest_routes.router, prefix="/api", tags=["ingest"])
 
 

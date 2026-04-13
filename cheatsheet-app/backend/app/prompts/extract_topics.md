@@ -21,6 +21,7 @@ Return a JSON object with this exact shape:
       "title": "string — 2-5 words, noun phrase",
       "importance": 0.0,
       "must_keep": false,
+      "anchor_terms": ["string"],
       "rationale": "string — one sentence, why this topic is on the cheatsheet (used only for your reasoning; will be logged but not shown to user)"
     }
   ]
@@ -35,6 +36,9 @@ Return a JSON object with this exact shape:
 - Order topics by **logical teaching order**, not by importance. A reader should be able to learn top-to-bottom.
 - `importance` reflects **exam weight**, not topic size. A tiny but critical formula topic can be 0.95; a large but rarely-tested background topic can be 0.4.
 - `must_keep` is TRUE only for topics that are the whole reason the cheatsheet exists. Use sparingly — ideally 1-3 topics.
+- `anchor_terms` must be 3-8 short phrases, symbols, or keywords that clearly belong to this topic and help separate it from sibling topics.
+- Prefer topic boundaries that make extraction easy later. "Evaluation metrics" and "precision vs recall tradeoffs" together is often too broad; "precision/recall/F1" plus "threshold tradeoffs" is cleaner.
+- Avoid generic buckets like "misc", "overview", "applications", or "other notes" unless the source itself is organized that way.
 - Output **ONLY the JSON object**. No markdown fences, no commentary.
 
 ## SOURCE MATERIAL
