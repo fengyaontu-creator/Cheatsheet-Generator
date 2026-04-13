@@ -33,11 +33,11 @@ MULTI_HIT_BONUS = 2  # bonus when 3+ distinct terms match
 
 LANGUAGE_INSTRUCTIONS = {
     "en": "Output all content strictly in English.",
-    "zh": "Output all content strictly in Chinese (简体中文).",
+    "zh": "Output all content strictly in Simplified Chinese (zh-CN).",
     "mixed": (
         "Output block titles and key terms in English. "
-        "Output explanations, annotations, and definitions in Chinese. "
-        'For important English terms, append "（中文翻译）" in parentheses. '
+        "Output explanations, annotations, and definitions in Simplified Chinese. "
+        "For important English terms, append the Chinese translation in parentheses. "
         "This is for a user who needs an English-language cheatsheet but benefits from Chinese explanations."
     ),
 }
