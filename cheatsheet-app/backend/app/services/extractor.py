@@ -66,7 +66,7 @@ class OutlineResult:
     blocks: list[Block]
     failed_topics: list[str]
     parser_warnings: list[str] = field(default_factory=list)
-    raw_outputs: dict[str, str] = field(default_factory=dict)  # topic_id → raw markdown
+    raw_outputs: dict[str, str] = field(default_factory=dict)  # topic_id -> raw markdown
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ async def extract_project(
             + ("." if len(outline_result.failed_topics) <= 4 else ", and more.")
         )
 
-    # Bubble parser warnings (always — these indicate prompt/format issues)
+    # Bubble parser warnings (always -- these indicate prompt/format issues)
     if outline_result.parser_warnings:
         warnings.extend(outline_result.parser_warnings)
 
@@ -134,7 +134,7 @@ async def extract_project(
 
 
 # ---------------------------------------------------------------------------
-# Stage 0: comprehension — evidence inventory
+# Stage 0: comprehension -- evidence inventory
 # ---------------------------------------------------------------------------
 
 
@@ -170,7 +170,7 @@ async def _run_topic_extraction(
     document_title = raw_json.get("document_title") or "Untitled cheatsheet"
     raw_topics = raw_json.get("topics") or []
     if not raw_topics:
-        raise ValueError("LLM returned no topics — source may be too short or unparseable")
+        raise ValueError("LLM returned no topics -- source may be too short or unparseable")
 
     topics = [_normalize_topic(t, idx) for idx, t in enumerate(raw_topics)]
     return TopicResult(document_title=document_title, topics=topics, raw_output=raw_json)
@@ -258,7 +258,7 @@ async def _run_outline_extraction(
         content_blocks = [b for b in content_blocks if b is not None]
 
         if not content_blocks:
-            # Zero blocks — queue for retry with more excerpts
+            # Zero blocks -- queue for retry with more excerpts
             retry_topics.append(topic)
             parser_warnings.append(
                 f"topic '{topic['title']}': 0 blocks produced, retrying with expanded excerpts"
