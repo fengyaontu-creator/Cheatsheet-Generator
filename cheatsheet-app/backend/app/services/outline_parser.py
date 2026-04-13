@@ -1,6 +1,7 @@
 """Parse a hierarchical Markdown outline into flat block dicts with parent_id chains."""
 
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 VALID_TYPES = {
@@ -18,22 +19,33 @@ _HEADING_RE = re.compile(r"^(#{2,6})\s+(.+)$")
 _META_RE = re.compile(r"^>\s*(.+)$")
 
 
-def parse_outline(markdown: str, topic_id: str) -> list[dict[str, Any]]:
+@dataclass
+class ParseResult:
+    blocks: list[dict[str, Any]]
+    warnings: list[str] = field(default_factory=list)
+
+
+def parse_outline(
+    markdown: str, topic_id: str
+) -> ParseResult:
     """Convert a Markdown outline into a list of block dicts ready for normalisation."""
     text = _strip_fences(markdown)
     lines = text.split("\n")
 
     blocks: list[dict[str, Any]] = []
+    warnings: list[str] = []
     seen_ids: set[str] = set()
     # Stack of (heading_level, block_id) for parent resolution
     parent_stack: list[tuple[int, str]] = []
 
     current: dict[str, Any] | None = None
+    current_title: str = ""
     meta_parsed = False
     content_lines: list[str] = []
+    prev_level: int = 0
 
     def flush() -> None:
-        nonlocal current, meta_parsed, content_lines
+        nonlocal current, current_title, meta_parsed, content_lines
         if current is None:
             return
         body, short, ultra, latex = _parse_content_lines(content_lines)
@@ -41,8 +53,22 @@ def parse_outline(markdown: str, topic_id: str) -> list[dict[str, Any]]:
         current["content_short"] = short
         current["content_ultra_short"] = ultra
         current["latex"] = latex
+
+        # Warn on missing density versions
+        if not short:
+            warnings.append(f"block '{current_title}': missing **short:** version")
+        if not ultra:
+            warnings.append(f"block '{current_title}': missing **ultra:** version")
+        # Warn on formula blocks without latex
+        if current.get("type") == "formula" and not latex:
+            warnings.append(f"block '{current_title}': formula block has no **latex:** field")
+        # Warn on empty body
+        if not body:
+            warnings.append(f"block '{current_title}': empty content body")
+
         blocks.append(current)
         current = None
+        current_title = ""
         meta_parsed = False
         content_lines = []
 
@@ -53,6 +79,14 @@ def parse_outline(markdown: str, topic_id: str) -> list[dict[str, Any]]:
             level = len(heading_m.group(1))  # ## = 2, ### = 3, etc.
             title = heading_m.group(2).strip()
             block_id = _make_id(topic_id, title, seen_ids)
+
+            # Warn on heading level jumps (e.g. ## → #### skipping ###)
+            if prev_level > 0 and level > prev_level + 1:
+                warnings.append(
+                    f"block '{title}': heading jumped from {'#' * prev_level} to {'#' * level} "
+                    f"(skipped {'#' * (prev_level + 1)})"
+                )
+            prev_level = level
 
             # Find parent: pop until we find a shallower level
             while parent_stack and parent_stack[-1][0] >= level:
@@ -69,6 +103,7 @@ def parse_outline(markdown: str, topic_id: str) -> list[dict[str, Any]]:
                 "compressibility": "medium",
                 "must_keep": False,
             }
+            current_title = title
             meta_parsed = False
             content_lines = []
             continue
@@ -78,17 +113,26 @@ def parse_outline(markdown: str, topic_id: str) -> list[dict[str, Any]]:
             if not meta_parsed:
                 meta_m = _META_RE.match(line)
                 if meta_m:
-                    current.update(_parse_meta(meta_m.group(1)))
+                    meta, meta_warnings = _parse_meta(meta_m.group(1), current_title)
+                    current.update(meta)
+                    warnings.extend(meta_warnings)
                     meta_parsed = True
                     continue
                 # A non-empty non-meta line means no metadata provided
                 if line.strip():
+                    warnings.append(
+                        f"block '{current_title}': no metadata line (expected > type | importance | compressibility)"
+                    )
                     meta_parsed = True
 
             content_lines.append(line)
 
     flush()
-    return blocks
+
+    if not blocks:
+        warnings.append(f"topic '{topic_id}': parser produced 0 blocks from outline")
+
+    return ParseResult(blocks=blocks, warnings=warnings)
 
 
 # ---------------------------------------------------------------------------
@@ -96,10 +140,13 @@ def parse_outline(markdown: str, topic_id: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def _parse_meta(text: str) -> dict[str, Any]:
-    """Parse 'definition | 0.95 | low | must_keep' into a dict."""
+def _parse_meta(text: str, block_title: str) -> tuple[dict[str, Any], list[str]]:
+    """Parse 'definition | 0.95 | low | must_keep' into a dict + warnings."""
     parts = [p.strip() for p in text.split("|")]
     result: dict[str, Any] = {}
+    warnings: list[str] = []
+    unrecognized: list[str] = []
+
     for part in parts:
         if part in VALID_TYPES:
             result["type"] = part
@@ -112,9 +159,24 @@ def _parse_meta(text: str) -> dict[str, Any]:
                 val = float(part)
                 if 0.0 <= val <= 1.0:
                     result["importance"] = val
+                else:
+                    warnings.append(
+                        f"block '{block_title}': importance {val} out of [0,1] range, clamping"
+                    )
+                    result["importance"] = max(0.0, min(1.0, val))
             except ValueError:
-                pass
-    return result
+                unrecognized.append(part)
+
+    if "type" not in result:
+        warnings.append(
+            f"block '{block_title}': metadata has no valid block type, defaulting to 'definition'"
+        )
+    if unrecognized:
+        warnings.append(
+            f"block '{block_title}': unrecognized metadata parts: {unrecognized}"
+        )
+
+    return result, warnings
 
 
 def _parse_content_lines(

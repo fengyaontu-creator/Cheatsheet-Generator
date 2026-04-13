@@ -16,7 +16,7 @@ from app.schemas.blocks import (
     MindmapPage,
 )
 from app.services.llm_client import LLMClient, load_prompt
-from app.services.outline_parser import parse_outline
+from app.services.outline_parser import ParseResult, parse_outline
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,7 @@ class TopicResult:
 class OutlineResult:
     blocks: list[Block]
     failed_topics: list[str]
+    parser_warnings: list[str] = field(default_factory=list)
     raw_outputs: dict[str, str] = field(default_factory=dict)  # topic_id → raw markdown
 
 
@@ -121,6 +122,10 @@ async def extract_project(
             + ", ".join(outline_result.failed_topics[:4])
             + ("." if len(outline_result.failed_topics) <= 4 else ", and more.")
         )
+
+    # Bubble parser warnings (always — these indicate prompt/format issues)
+    if outline_result.parser_warnings:
+        warnings.extend(outline_result.parser_warnings)
 
     # Assemble
     return _assemble_project(
@@ -213,6 +218,7 @@ async def _run_outline_extraction(
 
     all_blocks: list[Block] = []
     failed_topics: list[str] = []
+    parser_warnings: list[str] = []
     raw_outputs: dict[str, str] = {}
 
     for topic, result in zip(topics, results):
@@ -233,9 +239,10 @@ async def _run_outline_extraction(
             raw_outputs[topic["id"]] = f"ERROR: {result}"
             continue
 
-        raw_blocks, raw_md = result
+        parse_result, raw_md = result
         raw_outputs[topic["id"]] = raw_md
-        for raw_block in raw_blocks:
+        parser_warnings.extend(parse_result.warnings)
+        for raw_block in parse_result.blocks:
             block = _normalize_outline_block(raw_block)
             if block is not None:
                 all_blocks.append(block)
@@ -243,7 +250,12 @@ async def _run_outline_extraction(
     if not any(b.type != BlockType.topic for b in all_blocks):
         raise RuntimeError("All topic outline extraction passes failed.")
 
-    return OutlineResult(blocks=all_blocks, failed_topics=failed_topics, raw_outputs=raw_outputs)
+    return OutlineResult(
+        blocks=all_blocks,
+        failed_topics=failed_topics,
+        parser_warnings=parser_warnings,
+        raw_outputs=raw_outputs,
+    )
 
 
 def _extract_outline_for_topic(
@@ -253,7 +265,7 @@ def _extract_outline_for_topic(
     topic: dict[str, Any],
     all_topics: list[dict[str, Any]],
     lang_instruction: str,
-) -> tuple[list[dict[str, Any]], str]:
+) -> tuple[ParseResult, str]:
     system = load_prompt("system") + f"\n\n## Language\n\n{lang_instruction}"
     template = load_prompt("extract_outline")
     other_topics = "\n".join(
@@ -270,8 +282,8 @@ def _extract_outline_for_topic(
         .replace("{other_topics}", other_topics)
     )
     raw_markdown = client.complete(system, user)
-    parsed = parse_outline(raw_markdown, topic["id"])
-    return parsed, raw_markdown
+    result = parse_outline(raw_markdown, topic["id"])
+    return result, raw_markdown
 
 
 # ---------------------------------------------------------------------------
