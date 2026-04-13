@@ -24,10 +24,12 @@ export async function exportPdf(html: string): Promise<Blob> {
 export async function ingestPdf(
   file: File,
   userFocus: string,
+  language: string = 'en',
 ): Promise<CheatsheetProject> {
   const form = new FormData()
   form.append('file', file)
   form.append('user_focus', userFocus)
+  form.append('language', language)
   const res = await fetch(`${API_URL}/api/ingest/pdf`, {
     method: 'POST',
     body: form,
@@ -48,11 +50,12 @@ export async function ingestPdf(
 export async function ingestText(
   sourceText: string,
   userFocus: string,
+  language: string = 'en',
 ): Promise<CheatsheetProject> {
   const res = await fetch(`${API_URL}/api/ingest/text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source_text: sourceText, user_focus: userFocus }),
+    body: JSON.stringify({ source_text: sourceText, user_focus: userFocus, language }),
   })
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`

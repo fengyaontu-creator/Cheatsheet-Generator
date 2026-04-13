@@ -3,10 +3,18 @@ import { useNavigate } from 'react-router-dom'
 import { ingestPdf, ingestText } from '../../services/api'
 
 type Mode = 'pdf' | 'text'
+type Language = 'en' | 'zh' | 'mixed'
+
+const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
+  { value: 'en', label: 'English' },
+  { value: 'zh', label: '中文' },
+  { value: 'mixed', label: 'Mixed (中英)' },
+]
 
 export default function UploadPanel() {
   const navigate = useNavigate()
   const [mode, setMode] = useState<Mode>('pdf')
+  const [language, setLanguage] = useState<Language>('en')
   const [sourceText, setSourceText] = useState('')
   const [userFocus, setUserFocus] = useState('')
   const [pdfFile, setPdfFile] = useState<File | null>(null)
@@ -29,8 +37,8 @@ export default function UploadPanel() {
     try {
       const project =
         mode === 'pdf'
-          ? await ingestPdf(pdfFile!, userFocus)
-          : await ingestText(sourceText, userFocus)
+          ? await ingestPdf(pdfFile!, userFocus, language)
+          : await ingestText(sourceText, userFocus, language)
       navigate('/editor', { state: { project } })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -133,6 +141,23 @@ export default function UploadPanel() {
           />
         </div>
       )}
+
+      {/* Language selector */}
+      <div style={styles.field}>
+        <label style={styles.label}>Output language</label>
+        <div style={styles.langRow}>
+          {LANGUAGE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              style={language === opt.value ? styles.langActive : styles.langBtn}
+              onClick={() => setLanguage(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Focus instructions */}
       <div style={styles.field}>
@@ -256,6 +281,30 @@ const styles: Record<string, React.CSSProperties> = {
   actions: {
     display: 'flex',
     justifyContent: 'flex-end',
+  },
+  langRow: {
+    display: 'flex',
+    gap: 6,
+  },
+  langBtn: {
+    padding: '6px 14px',
+    background: '#f6f8fa',
+    border: '1px solid #d0d7de',
+    borderRadius: 6,
+    fontSize: 13,
+    fontWeight: 500,
+    color: '#57606a',
+    cursor: 'pointer',
+  },
+  langActive: {
+    padding: '6px 14px',
+    background: '#1f2328',
+    border: '1px solid #1f2328',
+    borderRadius: 6,
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#fff',
+    cursor: 'pointer',
   },
   submit: {
     padding: '10px 20px',

@@ -22,13 +22,30 @@ MAX_TOPICS = 12
 MAX_WORKERS = 4
 
 
-async def extract_project(source_text: str, user_focus: str) -> CheatsheetProject:
+LANGUAGE_INSTRUCTIONS = {
+    "en": "Output all content strictly in English.",
+    "zh": "Output all content strictly in Chinese (简体中文).",
+    "mixed": (
+        "Output block titles and key terms in English. "
+        "Output explanations, annotations, and definitions in Chinese. "
+        "For important English terms, append \"（中文翻译）\" in parentheses. "
+        "This is for a user who needs an English-language cheatsheet but benefits from Chinese explanations."
+    ),
+}
+
+
+async def extract_project(
+    source_text: str, user_focus: str, language: str = "en"
+) -> CheatsheetProject:
     client = LLMClient()
     focus = user_focus.strip() or "none"
+    lang_instruction = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"])
     warnings: list[str] = []
 
-    # Stage 1: topic extraction (unchanged)
-    outline = await asyncio.to_thread(_extract_topics, client, source_text, focus)
+    # Stage 1: topic extraction
+    outline = await asyncio.to_thread(
+        _extract_topics, client, source_text, focus, lang_instruction
+    )
     document_title = outline.get("document_title") or "Untitled cheatsheet"
     raw_topics = outline.get("topics") or []
     if not raw_topics:
@@ -45,7 +62,14 @@ async def extract_project(source_text: str, user_focus: str) -> CheatsheetProjec
     with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(topics))) as pool:
         futures = [
             loop.run_in_executor(
-                pool, _extract_outline_for_topic, client, source_text, focus, t, topics
+                pool,
+                _extract_outline_for_topic,
+                client,
+                source_text,
+                focus,
+                t,
+                topics,
+                lang_instruction,
             )
             for t in topics
         ]
@@ -112,9 +136,9 @@ async def extract_project(source_text: str, user_focus: str) -> CheatsheetProjec
 
 
 def _extract_topics(
-    client: LLMClient, source_text: str, user_focus: str
+    client: LLMClient, source_text: str, user_focus: str, lang_instruction: str
 ) -> dict[str, Any]:
-    system = load_prompt("system")
+    system = load_prompt("system") + f"\n\n## Language\n\n{lang_instruction}"
     template = load_prompt("extract_topics")
     user = template.replace("{user_focus}", user_focus).replace(
         "{source_text}", source_text
@@ -133,8 +157,9 @@ def _extract_outline_for_topic(
     user_focus: str,
     topic: dict[str, Any],
     all_topics: list[dict[str, Any]],
+    lang_instruction: str,
 ) -> list[dict[str, Any]]:
-    system = load_prompt("system")
+    system = load_prompt("system") + f"\n\n## Language\n\n{lang_instruction}"
     template = load_prompt("extract_outline")
     other_topics = "\n".join(
         f"- {t['title']}" for t in all_topics if t["id"] != topic["id"]

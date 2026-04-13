@@ -10,15 +10,20 @@ MAX_SOURCE_LENGTH = 50_000  # ~12k tokens, enough for several lectures
 MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
+VALID_LANGUAGES = {"en", "zh", "mixed"}
+
+
 class IngestTextRequest(BaseModel):
     source_text: str = Field(min_length=1, max_length=MAX_SOURCE_LENGTH)
     user_focus: str = Field(default="", max_length=500)
+    language: str = Field(default="en")
 
 
 @router.post("/ingest/text")
 async def ingest_text(payload: IngestTextRequest):
+    lang = payload.language if payload.language in VALID_LANGUAGES else "en"
     try:
-        project = await extract_project(payload.source_text, payload.user_focus)
+        project = await extract_project(payload.source_text, payload.user_focus, lang)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except ValueError as e:
@@ -30,6 +35,7 @@ async def ingest_text(payload: IngestTextRequest):
 async def ingest_pdf(
     file: UploadFile = File(...),
     user_focus: str = Form(""),
+    language: str = Form("en"),
 ):
     if file.content_type not in ("application/pdf", "application/x-pdf"):
         raise HTTPException(status_code=422, detail="Only PDF files are accepted.")
@@ -51,9 +57,10 @@ async def ingest_pdf(
 
     # Truncate to source length limit
     source_text = md_text[:MAX_SOURCE_LENGTH]
+    lang = language if language in VALID_LANGUAGES else "en"
 
     try:
-        project = await extract_project(source_text, user_focus)
+        project = await extract_project(source_text, user_focus, lang)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except ValueError as e:
