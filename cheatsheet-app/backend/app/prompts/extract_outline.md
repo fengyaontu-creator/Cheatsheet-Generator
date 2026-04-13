@@ -98,6 +98,11 @@ In 2008, static risk budgets led to 40%+ drawdowns. Adaptive budgets cut losses 
 
 ## SOURCE MATERIAL
 
-The source below contains a STRUCTURED DIGEST (authoritative, pre-analyzed) and optionally a RAW SOURCE section (original material for detail reference). Prefer the digest for structure; fall back to the raw source for any specific detail, exact wording, or formula the digest may have compressed.
+The source below contains two sections:
+
+1. **STRUCTURED DIGEST** — authoritative, pre-analyzed. Use this as your primary source for structure, concepts, and content.
+2. **RAW EXCERPTS** (optional) — selected paragraphs from the original material relevant to this topic. Use these for exact wording, precise formulas, thresholds, edge-case details, and variable definitions that the digest may have compressed.
+
+If the digest and excerpts conflict, prefer the digest unless the excerpt contains a clearly more precise source fact (e.g. an exact formula vs. a paraphrase).
 
 {source_text}

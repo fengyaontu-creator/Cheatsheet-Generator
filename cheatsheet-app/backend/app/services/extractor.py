@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
@@ -24,6 +25,11 @@ VALID_BLOCK_TYPES = {bt.value for bt in BlockType if bt.value != "topic"}
 VALID_COMPRESSIBILITY = {c.value for c in Compressibility}
 MAX_TOPICS = 12
 MAX_WORKERS = 4
+EXCERPT_MAX_CHARS = 5000
+EXCERPT_MAX_CHARS_RETRY = 10000
+TITLE_WEIGHT = 3
+ANCHOR_WEIGHT = 1
+MULTI_HIT_BONUS = 2  # bonus when 3+ distinct terms match
 
 LANGUAGE_INSTRUCTIONS = {
     "en": "Output all content strictly in English.",
@@ -101,15 +107,9 @@ async def extract_project(
 
     topics = topic_result.topics[:MAX_TOPICS]
 
-    # Stage 2: outline extraction per topic (digest + raw fallback)
-    stage2_source = (
-        "## STRUCTURED DIGEST (primary — treat as authoritative)\n\n"
-        + comprehension.summary
-        + "\n\n## RAW SOURCE (reference — use for details not in the digest)\n\n"
-        + source_text
-    )
+    # Stage 2: outline extraction per topic (digest + per-topic raw excerpts)
     outline_result = await _run_outline_extraction(
-        client, stage2_source, focus, topics, lang_instruction
+        client, comprehension.summary, source_text, focus, topics, lang_instruction
     )
     if debug:
         block_count = len(outline_result.blocks)
@@ -194,11 +194,19 @@ def _extract_topics(
 
 async def _run_outline_extraction(
     client: LLMClient,
-    source_text: str,
+    summary: str,
+    raw_source: str,
     user_focus: str,
     topics: list[dict[str, Any]],
     lang_instruction: str,
 ) -> OutlineResult:
+    # Build per-topic source: full digest + topic-specific raw excerpts
+    topic_sources: dict[str, str] = {}
+    for t in topics:
+        search_terms = [t["title"]] + (t.get("anchor_terms") or [])
+        excerpts = _extract_relevant_excerpts(raw_source, search_terms, EXCERPT_MAX_CHARS)
+        topic_sources[t["id"]] = _build_topic_source(summary, excerpts)
+
     loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(topics))) as pool:
         futures = [
@@ -206,7 +214,7 @@ async def _run_outline_extraction(
                 pool,
                 _extract_outline_for_topic,
                 client,
-                source_text,
+                topic_sources[t["id"]],
                 user_focus,
                 t,
                 topics,
@@ -220,6 +228,7 @@ async def _run_outline_extraction(
     failed_topics: list[str] = []
     parser_warnings: list[str] = []
     raw_outputs: dict[str, str] = {}
+    retry_topics: list[dict[str, Any]] = []
 
     for topic, result in zip(topics, results):
         topic_block = Block(
@@ -242,10 +251,60 @@ async def _run_outline_extraction(
         parse_result, raw_md = result
         raw_outputs[topic["id"]] = raw_md
         parser_warnings.extend(parse_result.warnings)
-        for raw_block in parse_result.blocks:
-            block = _normalize_outline_block(raw_block)
-            if block is not None:
-                all_blocks.append(block)
+
+        content_blocks = [
+            _normalize_outline_block(rb) for rb in parse_result.blocks
+        ]
+        content_blocks = [b for b in content_blocks if b is not None]
+
+        if not content_blocks:
+            # Zero blocks — queue for retry with more excerpts
+            retry_topics.append(topic)
+            parser_warnings.append(
+                f"topic '{topic['title']}': 0 blocks produced, retrying with expanded excerpts"
+            )
+        else:
+            all_blocks.extend(content_blocks)
+
+    # Retry zero-block topics with expanded excerpt limit
+    if retry_topics:
+        retry_sources: dict[str, str] = {}
+        for t in retry_topics:
+            search_terms = [t["title"]] + (t.get("anchor_terms") or [])
+            excerpts = _extract_relevant_excerpts(
+                raw_source, search_terms, EXCERPT_MAX_CHARS_RETRY
+            )
+            retry_sources[t["id"]] = _build_topic_source(summary, excerpts)
+
+        with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(retry_topics))) as pool:
+            retry_futures = [
+                loop.run_in_executor(
+                    pool,
+                    _extract_outline_for_topic,
+                    client,
+                    retry_sources[t["id"]],
+                    user_focus,
+                    t,
+                    topics,
+                    lang_instruction,
+                )
+                for t in retry_topics
+            ]
+            retry_results = await asyncio.gather(*retry_futures, return_exceptions=True)
+
+        for topic, result in zip(retry_topics, retry_results):
+            if isinstance(result, Exception):
+                failed_topics.append(topic["title"])
+                raw_outputs[topic["id"]] = f"RETRY ERROR: {result}"
+                continue
+
+            parse_result, raw_md = result
+            raw_outputs[topic["id"]] = f"(retry) {raw_md}"
+            parser_warnings.extend(parse_result.warnings)
+            for raw_block in parse_result.blocks:
+                block = _normalize_outline_block(raw_block)
+                if block is not None:
+                    all_blocks.append(block)
 
     if not any(b.type != BlockType.topic for b in all_blocks):
         raise RuntimeError("All topic outline extraction passes failed.")
@@ -256,6 +315,86 @@ async def _run_outline_extraction(
         parser_warnings=parser_warnings,
         raw_outputs=raw_outputs,
     )
+
+
+def _extract_relevant_excerpts(
+    source_text: str, search_terms: list[str], max_chars: int
+) -> str:
+    """Score paragraphs by relevance to search_terms and return the top ones."""
+    paragraphs = [p.strip() for p in re.split(r"\n\n+", source_text) if p.strip()]
+    if not paragraphs:
+        return ""
+
+    # Build lowered search terms for matching
+    terms_lower = [t.lower() for t in search_terms if t]
+    title_lower = terms_lower[0] if terms_lower else ""
+    anchor_lower = terms_lower[1:] if len(terms_lower) > 1 else []
+
+    scored: list[tuple[float, int, str]] = []  # (score, original_idx, text)
+    for idx, para in enumerate(paragraphs):
+        para_lower = para.lower()
+        score = 0.0
+
+        # Title match: high weight
+        if title_lower and title_lower in para_lower:
+            score += TITLE_WEIGHT
+
+        # Anchor term matches: count distinct hits
+        hits = 0
+        for term in anchor_lower:
+            if term in para_lower:
+                score += ANCHOR_WEIGHT
+                hits += 1
+
+        # Multi-hit bonus
+        if hits >= 3:
+            score += MULTI_HIT_BONUS
+
+        if score > 0:
+            scored.append((score, idx, para))
+
+    scored.sort(key=lambda x: (-x[0], x[1]))
+
+    # Take top paragraphs up to max_chars, expanding short ones with neighbors
+    selected_indices: set[int] = set()
+    total = 0
+    for _score, idx, para in scored:
+        if total >= max_chars:
+            break
+        if idx in selected_indices:
+            continue
+
+        selected_indices.add(idx)
+        total += len(para)
+
+        # If paragraph is short (<150 chars), grab adjacent for context
+        if len(para) < 150:
+            for neighbor in (idx - 1, idx + 1):
+                if 0 <= neighbor < len(paragraphs) and neighbor not in selected_indices:
+                    neighbor_text = paragraphs[neighbor]
+                    if total + len(neighbor_text) <= max_chars:
+                        selected_indices.add(neighbor)
+                        total += len(neighbor_text)
+
+    if not selected_indices:
+        return ""
+
+    # Return in original document order
+    return "\n\n".join(
+        paragraphs[i] for i in sorted(selected_indices)
+    )
+
+
+def _build_topic_source(summary: str, excerpts: str) -> str:
+    """Compose the source text for a single topic's outline extraction."""
+    parts = [
+        "## STRUCTURED DIGEST (authoritative)\n",
+        summary,
+    ]
+    if excerpts:
+        parts.append("\n\n## RAW EXCERPTS (reference for exact wording, formulas, thresholds)\n")
+        parts.append(excerpts)
+    return "\n".join(parts)
 
 
 def _extract_outline_for_topic(
