@@ -43,4 +43,6 @@ Return a JSON object with this exact shape:
 
 ## SOURCE MATERIAL
 
+The source below may be a structured comprehension digest rather than raw notes. Treat it as authoritative — it contains all the information you need.
+
 {source_text}

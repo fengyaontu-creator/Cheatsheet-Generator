@@ -42,9 +42,22 @@ async def extract_project(
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"])
     warnings: list[str] = []
 
-    # Stage 1: topic extraction
+    # Stage 0: comprehension — evidence inventory
+    summary = await asyncio.to_thread(
+        _comprehend, client, source_text, focus, lang_instruction
+    )
+
+    # Build dual-source for Stage 2 (digest + raw fallback)
+    stage2_source = (
+        "## STRUCTURED DIGEST (primary — treat as authoritative)\n\n"
+        + summary
+        + "\n\n## RAW SOURCE (reference — use for details not in the digest)\n\n"
+        + source_text
+    )
+
+    # Stage 1: topic extraction — uses digest only
     outline = await asyncio.to_thread(
-        _extract_topics, client, source_text, focus, lang_instruction
+        _extract_topics, client, summary, focus, lang_instruction
     )
     document_title = outline.get("document_title") or "Untitled cheatsheet"
     raw_topics = outline.get("topics") or []
@@ -65,7 +78,7 @@ async def extract_project(
                 pool,
                 _extract_outline_for_topic,
                 client,
-                source_text,
+                stage2_source,
                 focus,
                 t,
                 topics,
@@ -131,7 +144,23 @@ async def extract_project(
 
 
 # ---------------------------------------------------------------------------
-# Stage 1: topics (unchanged)
+# Stage 0: comprehension — evidence inventory
+# ---------------------------------------------------------------------------
+
+
+def _comprehend(
+    client: LLMClient, source_text: str, user_focus: str, lang_instruction: str
+) -> str:
+    system = load_prompt("system") + f"\n\n## Language\n\n{lang_instruction}"
+    template = load_prompt("comprehend")
+    user = template.replace("{user_focus}", user_focus).replace(
+        "{source_text}", source_text
+    )
+    return client.complete(system, user)
+
+
+# ---------------------------------------------------------------------------
+# Stage 1: topics
 # ---------------------------------------------------------------------------
 
 

@@ -98,4 +98,6 @@ In 2008, static risk budgets led to 40%+ drawdowns. Adaptive budgets cut losses 
 
 ## SOURCE MATERIAL
 
+The source below contains a STRUCTURED DIGEST (authoritative, pre-analyzed) and optionally a RAW SOURCE section (original material for detail reference). Prefer the digest for structure; fall back to the raw source for any specific detail, exact wording, or formula the digest may have compressed.
+
 {source_text}
