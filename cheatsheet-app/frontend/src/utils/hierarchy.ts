@@ -68,3 +68,63 @@ export function orderBlocksByIds(blocks: Block[], ids: string[]): Block[] {
   }
   return ordered
 }
+
+/* ── Mindmap atoms: fine-grained measurement units ── */
+
+export interface MindmapAtom {
+  topicId: string
+  topicTitle: string
+  nodeId: string
+  depth: number
+  kind: 'topic-header' | 'node-line'
+  keepWithNext: boolean
+  node: TreeNode
+  title: string
+}
+
+/**
+ * Flatten topic trees into a linear list of atoms for measurement & pagination.
+ * Each node in the tree becomes its own atom, giving the partition algorithm
+ * the same fine granularity that list-mode blocks enjoy.
+ */
+export function flattenTreeToAtoms(topicNodes: TreeNode[]): MindmapAtom[] {
+  const atoms: MindmapAtom[] = []
+  for (const topic of topicNodes) {
+    atoms.push({
+      topicId: topic.id,
+      topicTitle: topic.title,
+      nodeId: topic.id,
+      depth: 0,
+      kind: 'topic-header',
+      keepWithNext: topic.children.length > 0,
+      node: topic,
+      title: topic.title,
+    })
+    flattenChildren(atoms, topic.id, topic.title, topic.children, 1)
+  }
+  return atoms
+}
+
+function flattenChildren(
+  atoms: MindmapAtom[],
+  topicId: string,
+  topicTitle: string,
+  children: TreeNode[],
+  depth: number,
+) {
+  for (const child of children) {
+    atoms.push({
+      topicId,
+      topicTitle,
+      nodeId: child.id,
+      depth,
+      kind: 'node-line',
+      keepWithNext: child.children.length > 0,
+      node: child,
+      title: child.title,
+    })
+    if (child.children.length > 0) {
+      flattenChildren(atoms, topicId, topicTitle, child.children, depth + 1)
+    }
+  }
+}

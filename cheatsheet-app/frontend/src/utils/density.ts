@@ -14,6 +14,23 @@ export function versionForLevel(level: number): DensityVersion {
   return 'ultra_short'
 }
 
+/**
+ * Mindmap subtitle version — shifted one notch tighter than list mode.
+ * Level 5 returns '' (title-only skeleton).
+ */
+export function pickMindmapVersion(block: Block, densityLevel: number): string {
+  if (densityLevel >= 5) return ''
+  if (densityLevel >= 3) {
+    // dense / exam-cram → ultra_short
+    if (block.content_ultra_short) return block.content_ultra_short
+    if (block.content_short) return block.content_short
+    return block.content
+  }
+  // readable / balanced → short
+  if (block.content_short) return block.content_short
+  return block.content
+}
+
 export function densityLabel(level: number): string {
   return ['', 'Readable', 'Balanced', 'Dense', 'Exam cram', 'Max density'][level] ?? ''
 }
