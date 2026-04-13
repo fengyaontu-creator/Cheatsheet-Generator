@@ -301,10 +301,19 @@ async def _run_outline_extraction(
             parse_result, raw_md = result
             raw_outputs[topic["id"]] = f"(retry) {raw_md}"
             parser_warnings.extend(parse_result.warnings)
-            for raw_block in parse_result.blocks:
-                block = _normalize_outline_block(raw_block)
-                if block is not None:
-                    all_blocks.append(block)
+
+            retry_blocks = [
+                _normalize_outline_block(rb) for rb in parse_result.blocks
+            ]
+            retry_blocks = [b for b in retry_blocks if b is not None]
+
+            if retry_blocks:
+                all_blocks.extend(retry_blocks)
+            else:
+                failed_topics.append(topic["title"])
+                parser_warnings.append(
+                    f"topic '{topic['title']}': still 0 blocks after retry, marked as failed"
+                )
 
     if not any(b.type != BlockType.topic for b in all_blocks):
         raise RuntimeError("All topic outline extraction passes failed.")

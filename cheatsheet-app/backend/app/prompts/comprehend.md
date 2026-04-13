@@ -1,12 +1,12 @@
 ## Task: Produce an exhaustive evidence inventory of the source material
 
-Read the SOURCE MATERIAL below. Extract every exam-relevant fact into a structured inventory. This inventory will be the PRIMARY input for a cheatsheet generator — if a fact is missing here, it will likely be lost. Be exhaustive and precise.
+Read the SOURCE MATERIAL below. Extract every exam-relevant fact into a structured inventory. This inventory will be the PRIMARY input for a cheatsheet generator -- if a fact is missing here, it will likely be lost. Be exhaustive and precise.
 
 ## User focus
 
 {user_focus}
 
-(Bias toward focused areas if provided, but do NOT omit unfocused content — just deprioritize it.)
+(Bias toward focused areas if provided, but do NOT omit unfocused content -- just deprioritize it.)
 
 ## Output format
 
@@ -23,7 +23,7 @@ For each concept, term, or principle:
 - **Name:** {term}
   - Anchor terms: {3-8 keywords/symbols that identify this concept}
   - Related: {other concepts it connects to}
-  - Definition: {precise definition — copy exact wording/conditions from source}
+  - Definition: {precise definition -- copy exact wording/conditions from source}
   - Conditions/scope: {when it applies, when it doesn't}
 
 ### Formulas & quantitative facts
@@ -44,7 +44,7 @@ For each A-vs-B distinction or tradeoff:
 
 - **Name:** {A vs B}
   - Anchor terms: {keywords for both sides}
-  - Dimension: {what is being compared — speed, accuracy, assumptions, etc.}
+  - Dimension: {what is being compared -- speed, accuracy, assumptions, etc.}
   - A: {key properties}
   - B: {key properties}
   - Discriminating condition: {when to pick A over B, or the tradeoff}
@@ -83,10 +83,10 @@ For each worked example, case study, or illustrative scenario:
 
 ## Rules
 
-- Be EXHAUSTIVE — include every distinct fact, formula, condition, step, and contrast. Length is fine. Omission is not.
-- Be PRECISE — copy exact values, thresholds, variable names, conditions. Do not paraphrase numbers or weaken conditions (e.g., "roughly 0.05" when the source says "< 0.05").
-- Each item must be ATOMIC — one concept/formula/comparison per bullet. Do not merge multiple ideas.
-- Anchor terms are CRITICAL — they will be used to cluster items into topics later. Choose terms that uniquely identify this item.
+- Be EXHAUSTIVE -- include every distinct fact, formula, condition, step, and contrast. Length is fine. Omission is not.
+- Be PRECISE -- copy exact values, thresholds, variable names, conditions. Do not paraphrase numbers or weaken conditions (e.g., "roughly 0.05" when the source says "< 0.05").
+- Each item must be ATOMIC -- one concept/formula/comparison per bullet. Do not merge multiple ideas.
+- Anchor terms are CRITICAL -- they will be used to cluster items into topics later. Choose terms that uniquely identify this item.
 - Do NOT add information not in the source.
 - Do NOT write introductory/concluding commentary.
 - Output ONLY the Markdown inventory.

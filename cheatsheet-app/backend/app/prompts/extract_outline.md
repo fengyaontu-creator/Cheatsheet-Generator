@@ -37,18 +37,18 @@ Each heading MUST be immediately followed by a metadata line in blockquote forma
 ```
 
 - `type`: one of `definition`, `formula`, `comparison`, `pitfall`, `procedure`, `exam_tip`, `example`
-- `importance`: 0.0–1.0
+- `importance`: 0.0-1.0
 - `compressibility`: `high`, `medium`, or `low`
 - Append `| must_keep` if the block is critical
 
 After the metadata line, write the content in three density versions:
 
-1. The **main paragraph** — terse but complete (the full version)
-2. A line starting with `**short:**` — ~60% length, abbreviations ok
-3. A line starting with `**ultra:**` — ~25% length, keywords + symbols only
+1. The **main paragraph** -- terse but complete (the full version)
+2. A line starting with `**short:**` -- ~60% length, abbreviations ok
+3. A line starting with `**ultra:**` -- ~25% length, keywords + symbols only
 
 For `formula` type blocks, also add a line:
-- `**latex:**` — raw LaTeX body (no `$` delimiters, no `\begin{equation}`)
+- `**latex:**` -- raw LaTeX body (no `$` delimiters, no `\begin{equation}`)
 
 ## Example output
 
@@ -57,31 +57,31 @@ For `formula` type blocks, also add a line:
 > definition | 0.95 | low | must_keep
 Risk budgeting defines risk tolerance first: target Sharpe, drawdown limits, volatility caps. Anchors portfolio construction.
 **short:** Risk budget = tolerance first. Sharpe + drawdown + vol caps.
-**ultra:** Risk budget → Sharpe/drawdown/vol
+**ultra:** Risk budget -> Sharpe/drawdown/vol
 
 ### Setting Sharpe Targets
 > procedure | 0.85 | medium
 Steps: (1) Estimate expected return range (2) Set max drawdown (3) Derive target Sharpe from risk/return tradeoff.
-**short:** Est return → max drawdown → derive Sharpe
-**ultra:** return → drawdown → Sharpe
+**short:** Est return -> max drawdown -> derive Sharpe
+**ultra:** return -> drawdown -> Sharpe
 
 ### Common Mistakes
 > pitfall | 0.80 | high
 Don't ignore regime shifts when setting risk budgets. Static budgets break in crisis periods.
 **short:** Don't ignore regime shifts. Static budgets fail in crisis.
-**ultra:** ≠static budget; regimes matter
+**ultra:** !=static budget; regimes matter
 
 #### Crisis Example: 2008
 > example | 0.60 | high
 In 2008, static risk budgets led to 40%+ drawdowns. Adaptive budgets cut losses to ~20%.
-**short:** 2008: static → 40% loss; adaptive → ~20%.
+**short:** 2008: static -> 40% loss; adaptive -> ~20%.
 **ultra:** 2008: static 40% vs adaptive 20%
 ```
 
 ## Rules
 
 - Aim for **3-10 blocks** at the `##` level. Each `##` may have 0-5 sub-blocks.
-- Encourage **2-3 levels** of nesting where the content naturally supports it. Sub-procedures, sub-definitions, examples under a concept — these belong as `###` children. Don't force nesting where a flat list is natural.
+- Encourage **2-3 levels** of nesting where the content naturally supports it. Sub-procedures, sub-definitions, examples under a concept -- these belong as `###` children. Don't force nesting where a flat list is natural.
 - Three density versions are **required** for every block.
 - Stay tightly inside the current topic boundary. If a fact belongs more naturally to a sibling topic, omit it here.
 - Prefer blocks with concrete exam value: formulas, assumptions, trigger phrases, contrasts, edge cases, variable meanings, or step sequences.
@@ -100,8 +100,8 @@ In 2008, static risk budgets led to 40%+ drawdowns. Adaptive budgets cut losses 
 
 The source below contains two sections:
 
-1. **STRUCTURED DIGEST** — authoritative, pre-analyzed. Use this as your primary source for structure, concepts, and content.
-2. **RAW EXCERPTS** (optional) — selected paragraphs from the original material relevant to this topic. Use these for exact wording, precise formulas, thresholds, edge-case details, and variable definitions that the digest may have compressed.
+1. **STRUCTURED DIGEST** -- authoritative, pre-analyzed. Use this as your primary source for structure, concepts, and content.
+2. **RAW EXCERPTS** (optional) -- selected paragraphs from the original material relevant to this topic. Use these for exact wording, precise formulas, thresholds, edge-case details, and variable definitions that the digest may have compressed.
 
 If the digest and excerpts conflict, prefer the digest unless the excerpt contains a clearly more precise source fact (e.g. an exact formula vs. a paraphrase).
 
