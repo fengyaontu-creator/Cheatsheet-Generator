@@ -1,24 +1,36 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ingestText } from '../../services/api'
+import { ingestPdf, ingestText } from '../../services/api'
+
+type Mode = 'pdf' | 'text'
 
 export default function UploadPanel() {
   const navigate = useNavigate()
+  const [mode, setMode] = useState<Mode>('pdf')
   const [sourceText, setSourceText] = useState('')
   const [userFocus, setUserFocus] = useState('')
+  const [pdfFile, setPdfFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!sourceText.trim()) {
+    if (mode === 'pdf' && !pdfFile) {
+      setError('Please select a PDF file')
+      return
+    }
+    if (mode === 'text' && !sourceText.trim()) {
       setError('Source text is empty')
       return
     }
     setLoading(true)
     setError(null)
     try {
-      const project = await ingestText(sourceText, userFocus)
+      const project =
+        mode === 'pdf'
+          ? await ingestPdf(pdfFile!, userFocus)
+          : await ingestText(sourceText, userFocus)
       navigate('/editor', { state: { project } })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -27,27 +39,102 @@ export default function UploadPanel() {
     }
   }
 
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    const file = e.dataTransfer.files[0]
+    if (file?.type === 'application/pdf') setPdfFile(file)
+    else setError('Only PDF files are accepted.')
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) setPdfFile(file)
+  }
+
   const charCount = sourceText.length
 
   return (
     <form style={styles.form} onSubmit={handleSubmit}>
-      <div style={styles.field}>
-        <label style={styles.label}>
-          Source material
-          <span style={styles.hint}>
-            Paste lecture notes, textbook sections, or any markdown/plain text.
-            {charCount > 0 && ` · ${charCount.toLocaleString()} chars`}
-          </span>
-        </label>
-        <textarea
-          style={{ ...styles.textarea, minHeight: 320 }}
-          value={sourceText}
-          onChange={(e) => setSourceText(e.target.value)}
-          placeholder="Paste your source material here…"
-          disabled={loading}
-        />
+      {/* Tab switcher */}
+      <div style={styles.tabs}>
+        <button
+          type="button"
+          style={mode === 'pdf' ? styles.tabActive : styles.tab}
+          onClick={() => setMode('pdf')}
+        >
+          Upload PDF
+        </button>
+        <button
+          type="button"
+          style={mode === 'text' ? styles.tabActive : styles.tab}
+          onClick={() => setMode('text')}
+        >
+          Paste text
+        </button>
       </div>
 
+      {/* Source input */}
+      {mode === 'pdf' ? (
+        <div style={styles.field}>
+          <label style={styles.label}>PDF file</label>
+          <div
+            style={styles.dropZone}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+            onClick={() => fileRef.current?.click()}
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              style={{ display: 'none' }}
+              onChange={handleFileChange}
+            />
+            {pdfFile ? (
+              <div style={styles.fileInfo}>
+                <span>{pdfFile.name}</span>
+                <span style={styles.hint}>
+                  {(pdfFile.size / 1024 / 1024).toFixed(1)} MB
+                </span>
+                <button
+                  type="button"
+                  style={styles.removeBtn}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setPdfFile(null)
+                    if (fileRef.current) fileRef.current.value = ''
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <span style={styles.hint}>
+                Drop a PDF here or click to browse (max 20 MB)
+              </span>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div style={styles.field}>
+          <label style={styles.label}>
+            Source material
+            <span style={styles.hint}>
+              Paste lecture notes, textbook sections, or any markdown/plain text.
+              {charCount > 0 && ` · ${charCount.toLocaleString()} chars`}
+            </span>
+          </label>
+          <textarea
+            style={{ ...styles.textarea, minHeight: 320 }}
+            value={sourceText}
+            onChange={(e) => setSourceText(e.target.value)}
+            placeholder="Paste your source material here…"
+            disabled={loading}
+          />
+        </div>
+      )}
+
+      {/* Focus instructions */}
       <div style={styles.field}>
         <label style={styles.label}>
           Focus instructions <span style={styles.hint}>optional</span>
@@ -78,6 +165,31 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: 20,
   },
+  tabs: {
+    display: 'flex',
+    gap: 0,
+    borderBottom: '1px solid #d0d7de',
+  },
+  tab: {
+    padding: '8px 16px',
+    background: 'none',
+    border: 'none',
+    borderBottom: '2px solid transparent',
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#57606a',
+    cursor: 'pointer',
+  },
+  tabActive: {
+    padding: '8px 16px',
+    background: 'none',
+    border: 'none',
+    borderBottom: '2px solid #1f2328',
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#1f2328',
+    cursor: 'pointer',
+  },
   field: {
     display: 'flex',
     flexDirection: 'column',
@@ -95,6 +207,32 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 400,
     color: '#8b949e',
+  },
+  dropZone: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 120,
+    padding: 20,
+    border: '2px dashed #d0d7de',
+    borderRadius: 6,
+    cursor: 'pointer',
+    textAlign: 'center' as const,
+  },
+  fileInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    fontSize: 13,
+  },
+  removeBtn: {
+    padding: '4px 10px',
+    background: '#ffebe9',
+    color: '#82071e',
+    border: '1px solid #ffc1bc',
+    borderRadius: 4,
+    fontSize: 12,
+    cursor: 'pointer',
   },
   textarea: {
     width: '100%',

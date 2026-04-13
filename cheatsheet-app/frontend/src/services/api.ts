@@ -21,6 +21,30 @@ export async function exportPdf(html: string): Promise<Blob> {
   return await res.blob()
 }
 
+export async function ingestPdf(
+  file: File,
+  userFocus: string,
+): Promise<CheatsheetProject> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('user_focus', userFocus)
+  const res = await fetch(`${API_URL}/api/ingest/pdf`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`
+    try {
+      const body = await res.json()
+      if (body?.detail) detail = String(body.detail)
+    } catch {
+      // ignore
+    }
+    throw new Error(`PDF ingest failed: ${detail}`)
+  }
+  return (await res.json()) as CheatsheetProject
+}
+
 export async function ingestText(
   sourceText: string,
   userFocus: string,
