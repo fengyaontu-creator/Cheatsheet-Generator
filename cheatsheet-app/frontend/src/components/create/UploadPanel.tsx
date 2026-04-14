@@ -11,6 +11,9 @@ const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
   { value: 'mixed', label: 'Mixed (中英)' },
 ]
 
+const MAX_IMAGES = 10
+const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+
 export default function UploadPanel() {
   const navigate = useNavigate()
   const [mode, setMode] = useState<Mode>('pdf')
@@ -18,9 +21,11 @@ export default function UploadPanel() {
   const [sourceText, setSourceText] = useState('')
   const [userFocus, setUserFocus] = useState('')
   const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [imageFiles, setImageFiles] = useState<File[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const imgRef = useRef<HTMLInputElement>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -35,10 +40,11 @@ export default function UploadPanel() {
     setLoading(true)
     setError(null)
     try {
+      const imgs = imageFiles.length > 0 ? imageFiles : undefined
       const project =
         mode === 'pdf'
-          ? await ingestPdf(pdfFile!, userFocus, language)
-          : await ingestText(sourceText, userFocus, language)
+          ? await ingestPdf(pdfFile!, userFocus, language, imgs)
+          : await ingestText(sourceText, userFocus, language, imgs)
       navigate('/editor', { state: { project } })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -57,6 +63,18 @@ export default function UploadPanel() {
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (file) setPdfFile(file)
+  }
+
+  function handleImageAdd(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    const valid = files.filter((f) => ACCEPTED_IMAGE_TYPES.includes(f.type))
+    if (valid.length < files.length) setError('Some files were skipped (only png/jpeg/webp/gif).')
+    setImageFiles((prev) => [...prev, ...valid].slice(0, MAX_IMAGES))
+    if (imgRef.current) imgRef.current.value = ''
+  }
+
+  function removeImage(idx: number) {
+    setImageFiles((prev) => prev.filter((_, i) => i !== idx))
   }
 
   const charCount = sourceText.length
@@ -156,6 +174,52 @@ export default function UploadPanel() {
               {opt.label}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Supplementary images */}
+      <div style={styles.field}>
+        <label style={styles.label}>
+          Reference images{' '}
+          <span style={styles.hint}>
+            optional -- diagrams, formulas, screenshots the LLM should consider (max {MAX_IMAGES})
+          </span>
+        </label>
+        <input
+          ref={imgRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleImageAdd}
+        />
+        <div style={styles.imageRow}>
+          {imageFiles.map((f, i) => (
+            <div key={`${f.name}-${i}`} style={styles.imageThumb}>
+              <img
+                src={URL.createObjectURL(f)}
+                alt={f.name}
+                style={styles.thumbImg}
+              />
+              <button
+                type="button"
+                style={styles.thumbRemove}
+                onClick={() => removeImage(i)}
+              >
+                x
+              </button>
+            </div>
+          ))}
+          {imageFiles.length < MAX_IMAGES && (
+            <button
+              type="button"
+              style={styles.addImageBtn}
+              onClick={() => imgRef.current?.click()}
+              disabled={loading}
+            >
+              + Add image
+            </button>
+          )}
         </div>
       </div>
 
@@ -304,6 +368,54 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 600,
     color: '#fff',
+    cursor: 'pointer',
+  },
+  imageRow: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: 8,
+    alignItems: 'center',
+  },
+  imageThumb: {
+    position: 'relative' as const,
+    width: 72,
+    height: 72,
+    borderRadius: 6,
+    overflow: 'hidden',
+    border: '1px solid #d0d7de',
+  },
+  thumbImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover' as const,
+  },
+  thumbRemove: {
+    position: 'absolute' as const,
+    top: 2,
+    right: 2,
+    width: 18,
+    height: 18,
+    padding: 0,
+    background: 'rgba(0,0,0,0.55)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '50%',
+    fontSize: 11,
+    lineHeight: '18px',
+    textAlign: 'center' as const,
+    cursor: 'pointer',
+  },
+  addImageBtn: {
+    width: 72,
+    height: 72,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '2px dashed #d0d7de',
+    borderRadius: 6,
+    background: 'none',
+    fontSize: 12,
+    color: '#57606a',
     cursor: 'pointer',
   },
   submit: {

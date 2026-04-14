@@ -94,6 +94,7 @@ async def extract_project(
     user_focus: str,
     language: str = "en",
     debug: bool = False,
+    images: list[bytes] | None = None,
 ) -> CheatsheetProject:
     client = LLMClient()
     focus = user_focus.strip() or "none"
@@ -101,9 +102,9 @@ async def extract_project(
     stage_models = _resolve_stage_models(client.default_model)
     warnings: list[str] = []
 
-    # Stage 0: comprehension
+    # Stage 0: comprehension (images only used here -- digest carries info forward)
     comprehension = await _run_comprehension(
-        client, source_text, focus, lang_instruction, stage_models.comprehend
+        client, source_text, focus, lang_instruction, stage_models.comprehend, images
     )
     if debug:
         logger.info("=== Stage 0: Comprehension ===\n%s", comprehension.summary[:2000])
@@ -183,34 +184,39 @@ async def _run_comprehension(
     user_focus: str,
     lang_instruction: str,
     model: str,
+    images: list[bytes] | None = None,
 ) -> ComprehensionResult:
-    cache_key = _make_stage_cache_key(
-        "stage0_comprehend",
-        {
-            "source_text": source_text,
-            "user_focus": user_focus,
-            "lang_instruction": lang_instruction,
-            "model": model,
-            "system_prompt": load_prompt("system"),
-            "prompt": load_prompt("comprehend"),
-        },
-    )
-    cached = _load_stage_cache("stage0", cache_key)
-    if cached is not None:
-        return ComprehensionResult(
-            summary=str(cached.get("summary") or ""),
-            raw_output=str(cached.get("raw_output") or cached.get("summary") or ""),
+    # Skip cache when images are present (image bytes not suitable for cache key)
+    if not images:
+        cache_key = _make_stage_cache_key(
+            "stage0_comprehend",
+            {
+                "source_text": source_text,
+                "user_focus": user_focus,
+                "lang_instruction": lang_instruction,
+                "model": model,
+                "system_prompt": load_prompt("system"),
+                "prompt": load_prompt("comprehend"),
+            },
         )
+        cached = _load_stage_cache("stage0", cache_key)
+        if cached is not None:
+            return ComprehensionResult(
+                summary=str(cached.get("summary") or ""),
+                raw_output=str(cached.get("raw_output") or cached.get("summary") or ""),
+            )
 
     raw = await asyncio.to_thread(
-        _comprehend, client, source_text, user_focus, lang_instruction, model
+        _comprehend, client, source_text, user_focus, lang_instruction, model, images
     )
     result = ComprehensionResult(summary=raw, raw_output=raw)
-    _save_stage_cache(
-        "stage0",
-        cache_key,
-        {"summary": result.summary, "raw_output": result.raw_output},
-    )
+
+    if not images:
+        _save_stage_cache(
+            "stage0",
+            cache_key,
+            {"summary": result.summary, "raw_output": result.raw_output},
+        )
     return result
 
 
@@ -220,13 +226,14 @@ def _comprehend(
     user_focus: str,
     lang_instruction: str,
     model: str,
+    images: list[bytes] | None = None,
 ) -> str:
     system = load_prompt("system") + f"\n\n## Language\n\n{lang_instruction}"
     template = load_prompt("comprehend")
     user = template.replace("{user_focus}", user_focus).replace(
         "{source_text}", source_text
     )
-    return client.complete(system, user, model=model)
+    return client.complete(system, user, model=model, images=images)
 
 
 # ---------------------------------------------------------------------------
