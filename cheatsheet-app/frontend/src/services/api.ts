@@ -21,19 +21,7 @@ export async function exportPdf(html: string): Promise<Blob> {
   return await res.blob()
 }
 
-export async function ingestPdf(
-  file: File,
-  userFocus: string,
-  language: string = 'en',
-): Promise<CheatsheetProject> {
-  const form = new FormData()
-  form.append('file', file)
-  form.append('user_focus', userFocus)
-  form.append('language', language)
-  const res = await fetch(`${API_URL}/api/ingest/pdf`, {
-    method: 'POST',
-    body: form,
-  })
+async function handleResponse(res: Response, label: string): Promise<CheatsheetProject> {
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`
     try {
@@ -42,30 +30,49 @@ export async function ingestPdf(
     } catch {
       // ignore
     }
-    throw new Error(`PDF ingest failed: ${detail}`)
+    throw new Error(`${label}: ${detail}`)
   }
   return (await res.json()) as CheatsheetProject
+}
+
+function appendImages(form: FormData, images?: File[]) {
+  if (images) {
+    for (const img of images) form.append('images', img)
+  }
+}
+
+export async function ingestPdf(
+  file: File,
+  userFocus: string,
+  language: string = 'en',
+  images?: File[],
+): Promise<CheatsheetProject> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('user_focus', userFocus)
+  form.append('language', language)
+  appendImages(form, images)
+  const res = await fetch(`${API_URL}/api/ingest/pdf`, {
+    method: 'POST',
+    body: form,
+  })
+  return handleResponse(res, 'PDF ingest failed')
 }
 
 export async function ingestText(
   sourceText: string,
   userFocus: string,
   language: string = 'en',
+  images?: File[],
 ): Promise<CheatsheetProject> {
+  const form = new FormData()
+  form.append('source_text', sourceText)
+  form.append('user_focus', userFocus)
+  form.append('language', language)
+  appendImages(form, images)
   const res = await fetch(`${API_URL}/api/ingest/text`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source_text: sourceText, user_focus: userFocus, language }),
+    body: form,
   })
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`
-    try {
-      const body = await res.json()
-      if (body?.detail) detail = String(body.detail)
-    } catch {
-      // ignore
-    }
-    throw new Error(`Ingest failed: ${detail}`)
-  }
-  return (await res.json()) as CheatsheetProject
+  return handleResponse(res, 'Ingest failed')
 }

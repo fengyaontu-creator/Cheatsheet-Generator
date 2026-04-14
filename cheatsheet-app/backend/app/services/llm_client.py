@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -13,6 +14,23 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "anthropic/claude-sonnet-4.5"
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+
+
+def _build_user_content(
+    text: str, images: list[bytes] | None = None,
+) -> str | list[dict[str, Any]]:
+    """Build the user message content, adding image parts if provided."""
+    if not images:
+        return text
+    parts: list[dict[str, Any]] = []
+    for img_bytes in images:
+        b64 = base64.b64encode(img_bytes).decode("ascii")
+        parts.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{b64}"},
+        })
+    parts.append({"type": "text", "text": text})
+    return parts
 
 
 class LLMClient:
@@ -31,13 +49,14 @@ class LLMClient:
         user_prompt: str,
         temperature: float = 0.2,
         model: str | None = None,
+        images: list[bytes] | None = None,
     ) -> str:
         resp = self.client.chat.completions.create(
             model=model or self.default_model,
             temperature=temperature,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+                {"role": "user", "content": _build_user_content(user_prompt, images)},
             ],
             extra_headers={
                 "HTTP-Referer": "http://localhost:5173",
@@ -52,13 +71,14 @@ class LLMClient:
         user_prompt: str,
         temperature: float = 0.2,
         model: str | None = None,
+        images: list[bytes] | None = None,
     ) -> Any:
         resp = self.client.chat.completions.create(
             model=model or self.default_model,
             temperature=temperature,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+                {"role": "user", "content": _build_user_content(user_prompt, images)},
             ],
             extra_headers={
                 "HTTP-Referer": "http://localhost:5173",
