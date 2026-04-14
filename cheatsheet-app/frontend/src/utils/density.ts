@@ -8,8 +8,7 @@ export function pickVersion(block: Block, densityLevel: number): string {
 }
 
 export function versionForLevel(level: number): DensityVersion {
-  if (level <= 2) return 'full'
-  if (level === 3) return 'full'
+  if (level <= 3) return 'full'
   if (level === 4) return 'short'
   return 'ultra_short'
 }
