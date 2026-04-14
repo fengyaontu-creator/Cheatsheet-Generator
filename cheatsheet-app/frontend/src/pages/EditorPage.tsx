@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { sampleProject } from '../mock/sampleProject'
 import type {
+  Block,
   CheatsheetProject,
   ListLayout,
   MindmapLayout,
@@ -45,6 +46,7 @@ export default function EditorPage() {
   const [exporting, setExporting] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
+  const insertImgRef = useRef<HTMLInputElement>(null)
   const activePageIdx = 0
   const page = project.pages[activePageIdx]
 
@@ -165,6 +167,35 @@ export default function EditorPage() {
     }))
   }
 
+  function handleInsertImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUri = reader.result as string
+      const name = file.name.replace(/\.[^.]+$/, '')
+      const newBlock: Block = {
+        id: `img_${Date.now()}`,
+        type: 'image',
+        title: name,
+        content: '',
+        importance: 0.5,
+        compressibility: 'high',
+        must_keep: false,
+        image_data: dataUri,
+        image_width: 'medium',
+        image_caption: '',
+      }
+      setProject((p) => ({
+        ...p,
+        blocks: [...p.blocks, newBlock],
+        pages: p.pages.map((pg) => ({ ...pg, block_ids: [...pg.block_ids, newBlock.id] })),
+      }))
+    }
+    reader.readAsDataURL(file)
+    if (insertImgRef.current) insertImgRef.current.value = ''
+  }
+
   async function handleExport() {
     setExportError(null)
     setStatusMessage(null)
@@ -227,6 +258,19 @@ ${stylesheets}
           ← Cheatsheet
         </Link>
         <h2 style={styles.docTitle}>{project.document_title}</h2>
+        <input
+          ref={insertImgRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          style={{ display: 'none' }}
+          onChange={handleInsertImage}
+        />
+        <button
+          style={styles.insertImgBtn}
+          onClick={() => insertImgRef.current?.click()}
+        >
+          + Image
+        </button>
         <button style={styles.exportBtn} onClick={handleExport} disabled={exporting}>
           {exporting ? 'Exporting...' : 'Export PDF'}
         </button>
@@ -314,6 +358,16 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     flex: 1,
     color: '#57606a',
+  },
+  insertImgBtn: {
+    padding: '8px 14px',
+    background: '#fff',
+    color: '#1f2328',
+    border: '1px solid #d0d7de',
+    borderRadius: 6,
+    fontWeight: 600,
+    fontSize: 13,
+    cursor: 'pointer',
   },
   exportBtn: {
     padding: '8px 16px',

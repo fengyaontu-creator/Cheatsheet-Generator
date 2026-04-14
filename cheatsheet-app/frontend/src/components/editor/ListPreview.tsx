@@ -44,6 +44,12 @@ export default function ListPreview({
   )
 }
 
+const IMAGE_WIDTH_MAP: Record<string, string> = {
+  small: '40%',
+  medium: '70%',
+  full: '100%',
+}
+
 export function BlockRender({
   block,
   densityLevel,
@@ -51,6 +57,17 @@ export function BlockRender({
   block: Block
   densityLevel: number
 }) {
+  if (block.type === 'image' && block.image_data) {
+    const width = IMAGE_WIDTH_MAP[block.image_width ?? 'medium'] ?? '70%'
+    return (
+      <div style={styles.block}>
+        <img src={block.image_data} alt={block.title} style={{ ...styles.blockImage, width }} />
+        {block.image_caption && (
+          <div style={styles.imageCaption}>{block.image_caption}</div>
+        )}
+      </div>
+    )
+  }
   const text = pickVersion(block, densityLevel)
   return (
     <div style={styles.block}>
@@ -114,5 +131,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
   lock: {
     fontSize: '0.8em',
+  },
+  blockImage: {
+    display: 'block',
+    maxWidth: '100%',
+    height: 'auto',
+    borderRadius: 2,
+  },
+  imageCaption: {
+    fontSize: '0.85em',
+    color: '#57606a',
+    marginTop: '0.15em',
+    fontStyle: 'italic',
   },
 }

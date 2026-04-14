@@ -19,6 +19,7 @@ const typeColors: Record<Block['type'], string> = {
   procedure: '#bf8700',
   exam_tip: '#d4379a',
   example: '#57606a',
+  image: '#0550ae',
 }
 
 export default function BlockCard({ block, index, total, onMove, onDelete, onToggleLock }: Props) {
@@ -30,7 +31,11 @@ export default function BlockCard({ block, index, total, onMove, onDelete, onTog
         <span style={styles.importance}>★ {block.importance.toFixed(2)}</span>
       </div>
       <div style={styles.title}>{block.title}</div>
-      <div style={styles.preview}>{block.content_short ?? block.content}</div>
+      {block.type === 'image' && block.image_data ? (
+        <img src={block.image_data} alt={block.title} style={styles.thumbPreview} />
+      ) : (
+        <div style={styles.preview}>{block.content_short ?? block.content}</div>
+      )}
       {block.source_ref && <div style={styles.source}>{block.source_ref}</div>}
       <div style={styles.actions}>
         <button
@@ -114,6 +119,12 @@ const styles: Record<string, React.CSSProperties> = {
     display: '-webkit-box',
     WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
+  },
+  thumbPreview: {
+    maxWidth: '100%',
+    maxHeight: 60,
+    borderRadius: 4,
+    objectFit: 'contain' as const,
   },
   source: {
     fontSize: 10,
