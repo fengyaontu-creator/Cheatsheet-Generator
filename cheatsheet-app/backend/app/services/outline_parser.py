@@ -48,10 +48,8 @@ def parse_outline(
         nonlocal current, current_title, meta_parsed, content_lines
         if current is None:
             return
-        body, short, ultra, latex = _parse_content_lines(content_lines)
+        body, latex = _parse_content_lines(content_lines)
         current["content"] = body or ""
-        current["content_short"] = short
-        current["content_ultra_short"] = ultra
         current["latex"] = latex
 
         # Warn on formula blocks without latex
@@ -176,26 +174,20 @@ def _parse_meta(text: str, block_title: str) -> tuple[dict[str, Any], list[str]]
 
 def _parse_content_lines(
     lines: list[str],
-) -> tuple[str | None, str | None, str | None, str | None]:
-    """Split accumulated lines into body / short / ultra / latex."""
+) -> tuple[str | None, str | None]:
+    """Split accumulated lines into body and optional latex."""
     body_parts: list[str] = []
-    short: str | None = None
-    ultra: str | None = None
     latex: str | None = None
 
     for line in lines:
         stripped = line.strip()
-        if stripped.lower().startswith("**short:**"):
-            short = stripped[len("**short:**") :].strip()
-        elif stripped.lower().startswith("**ultra:**"):
-            ultra = stripped[len("**ultra:**") :].strip()
-        elif stripped.lower().startswith("**latex:**"):
+        if stripped.lower().startswith("**latex:**"):
             latex = stripped[len("**latex:**") :].strip()
         else:
             body_parts.append(line)
 
     body = "\n".join(body_parts).strip() or None
-    return body, short, ultra, latex
+    return body, latex
 
 
 def _slugify(text: str) -> str:

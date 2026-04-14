@@ -21,12 +21,14 @@ from app.schemas.blocks import (
     MindmapPage,
 )
 from app.services.llm_client import LLMClient, load_prompt
-from app.services.outline_parser import ParseResult, parse_outline
+from app.services.outline_parser import (
+    VALID_COMPRESSIBILITY,
+    VALID_TYPES as VALID_BLOCK_TYPES,
+    ParseResult,
+    parse_outline,
+)
 
 logger = logging.getLogger(__name__)
-
-VALID_BLOCK_TYPES = {bt.value for bt in BlockType if bt.value != "topic"}
-VALID_COMPRESSIBILITY = {c.value for c in Compressibility}
 MAX_TOPICS = 12
 MAX_WORKERS = 4
 EXCERPT_MAX_CHARS = 5000
@@ -750,8 +752,6 @@ def _normalize_outline_block(raw: dict[str, Any]) -> Block | None:
         title=title,
         content=content,
         parent_id=raw.get("parent_id"),
-        content_short=_opt_str(raw.get("content_short")),
-        content_ultra_short=_opt_str(raw.get("content_ultra_short")),
         latex=latex,
         importance=_clamp01(raw.get("importance"), default=0.5),
         compressibility=Compressibility(compressibility_raw),
