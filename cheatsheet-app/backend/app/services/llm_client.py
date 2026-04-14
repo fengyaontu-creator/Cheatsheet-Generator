@@ -22,12 +22,18 @@ class LLMClient:
             raise RuntimeError(
                 "OPENROUTER_API_KEY not set. Copy .env.example to .env and fill in your key."
             )
-        self.model = os.getenv("OPENROUTER_MODEL", DEFAULT_MODEL)
+        self.default_model = os.getenv("OPENROUTER_MODEL", DEFAULT_MODEL)
         self.client = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=api_key)
 
-    def complete(self, system_prompt: str, user_prompt: str, temperature: float = 0.2) -> str:
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.2,
+        model: str | None = None,
+    ) -> str:
         resp = self.client.chat.completions.create(
-            model=self.model,
+            model=model or self.default_model,
             temperature=temperature,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -40,9 +46,15 @@ class LLMClient:
         )
         return resp.choices[0].message.content or ""
 
-    def complete_json(self, system_prompt: str, user_prompt: str, temperature: float = 0.2) -> Any:
+    def complete_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.2,
+        model: str | None = None,
+    ) -> Any:
         resp = self.client.chat.completions.create(
-            model=self.model,
+            model=model or self.default_model,
             temperature=temperature,
             messages=[
                 {"role": "system", "content": system_prompt},

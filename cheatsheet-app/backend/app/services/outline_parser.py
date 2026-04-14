@@ -54,11 +54,6 @@ def parse_outline(
         current["content_ultra_short"] = ultra
         current["latex"] = latex
 
-        # Warn on missing density versions
-        if not short:
-            warnings.append(f"block '{current_title}': missing **short:** version")
-        if not ultra:
-            warnings.append(f"block '{current_title}': missing **ultra:** version")
         # Warn on formula blocks without latex
         if current.get("type") == "formula" and not latex:
             warnings.append(f"block '{current_title}': formula block has no **latex:** field")
