@@ -1,8 +1,12 @@
 import asyncio
+import hashlib
+import json
 import logging
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from app.schemas.blocks import (
@@ -30,6 +34,7 @@ EXCERPT_MAX_CHARS_RETRY = 10000
 TITLE_WEIGHT = 3
 ANCHOR_WEIGHT = 1
 MULTI_HIT_BONUS = 2  # bonus when 3+ distinct terms match
+CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache" / "extractor"
 
 LANGUAGE_INSTRUCTIONS = {
     "en": "Output all content strictly in English.",
@@ -69,6 +74,14 @@ class OutlineResult:
     raw_outputs: dict[str, str] = field(default_factory=dict)  # topic_id -> raw markdown
 
 
+@dataclass(frozen=True)
+class StageModels:
+    comprehend: str
+    topics: str
+    outlines: str
+    compress: str
+
+
 # ---------------------------------------------------------------------------
 # Pipeline orchestrator
 # ---------------------------------------------------------------------------
@@ -83,22 +96,27 @@ async def extract_project(
     client = LLMClient()
     focus = user_focus.strip() or "none"
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"])
+    stage_models = _resolve_stage_models(client.default_model)
     warnings: list[str] = []
 
     # Stage 0: comprehension
-    comprehension = await _run_comprehension(client, source_text, focus, lang_instruction)
+    comprehension = await _run_comprehension(
+        client, source_text, focus, lang_instruction, stage_models.comprehend
+    )
     if debug:
         logger.info("=== Stage 0: Comprehension ===\n%s", comprehension.summary[:2000])
         warnings.append(f"[debug] Stage 0 summary length: {len(comprehension.summary)} chars")
+        warnings.append(f"[debug] Stage 0 model: {stage_models.comprehend}")
 
     # Stage 1: topic extraction (uses digest only)
     topic_result = await _run_topic_extraction(
-        client, comprehension.summary, focus, lang_instruction
+        client, comprehension.summary, focus, lang_instruction, stage_models.topics
     )
     if debug:
         topic_names = [t["title"] for t in topic_result.topics]
         logger.info("=== Stage 1: Topics ===\n%s", topic_names)
         warnings.append(f"[debug] Stage 1 topics: {topic_names}")
+        warnings.append(f"[debug] Stage 1 model: {stage_models.topics}")
 
     if len(topic_result.topics) > MAX_TOPICS:
         warnings.append(
@@ -109,12 +127,31 @@ async def extract_project(
 
     # Stage 2: outline extraction per topic (digest + per-topic raw excerpts)
     outline_result = await _run_outline_extraction(
-        client, comprehension.summary, source_text, focus, topics, lang_instruction
+        client,
+        comprehension.summary,
+        source_text,
+        focus,
+        topics,
+        lang_instruction,
+        stage_models.outlines,
     )
     if debug:
         block_count = len(outline_result.blocks)
         logger.info("=== Stage 2: Outlines === %d blocks, %d failed", block_count, len(outline_result.failed_topics))
         warnings.append(f"[debug] Stage 2: {block_count} blocks, failed: {outline_result.failed_topics}")
+        warnings.append(f"[debug] Stage 2 model: {stage_models.outlines}")
+
+    # Stage 3: density compression
+    blocks = await _run_compression(
+        client,
+        outline_result.blocks,
+        topics,
+        focus,
+        lang_instruction,
+        stage_models.compress,
+    )
+    if debug:
+        warnings.append(f"[debug] Stage 3 model: {stage_models.compress}")
 
     if outline_result.failed_topics:
         warnings.append(
@@ -129,7 +166,7 @@ async def extract_project(
 
     # Assemble
     return _assemble_project(
-        topic_result.document_title, topics, outline_result.blocks, warnings
+        topic_result.document_title, topics, blocks, warnings
     )
 
 
@@ -139,21 +176,55 @@ async def extract_project(
 
 
 async def _run_comprehension(
-    client: LLMClient, source_text: str, user_focus: str, lang_instruction: str
+    client: LLMClient,
+    source_text: str,
+    user_focus: str,
+    lang_instruction: str,
+    model: str,
 ) -> ComprehensionResult:
-    raw = await asyncio.to_thread(_comprehend, client, source_text, user_focus, lang_instruction)
-    return ComprehensionResult(summary=raw, raw_output=raw)
+    cache_key = _make_stage_cache_key(
+        "stage0_comprehend",
+        {
+            "source_text": source_text,
+            "user_focus": user_focus,
+            "lang_instruction": lang_instruction,
+            "model": model,
+            "system_prompt": load_prompt("system"),
+            "prompt": load_prompt("comprehend"),
+        },
+    )
+    cached = _load_stage_cache("stage0", cache_key)
+    if cached is not None:
+        return ComprehensionResult(
+            summary=str(cached.get("summary") or ""),
+            raw_output=str(cached.get("raw_output") or cached.get("summary") or ""),
+        )
+
+    raw = await asyncio.to_thread(
+        _comprehend, client, source_text, user_focus, lang_instruction, model
+    )
+    result = ComprehensionResult(summary=raw, raw_output=raw)
+    _save_stage_cache(
+        "stage0",
+        cache_key,
+        {"summary": result.summary, "raw_output": result.raw_output},
+    )
+    return result
 
 
 def _comprehend(
-    client: LLMClient, source_text: str, user_focus: str, lang_instruction: str
+    client: LLMClient,
+    source_text: str,
+    user_focus: str,
+    lang_instruction: str,
+    model: str,
 ) -> str:
     system = load_prompt("system") + f"\n\n## Language\n\n{lang_instruction}"
     template = load_prompt("comprehend")
     user = template.replace("{user_focus}", user_focus).replace(
         "{source_text}", source_text
     )
-    return client.complete(system, user)
+    return client.complete(system, user, model=model)
 
 
 # ---------------------------------------------------------------------------
@@ -162,10 +233,41 @@ def _comprehend(
 
 
 async def _run_topic_extraction(
-    client: LLMClient, source_text: str, user_focus: str, lang_instruction: str
+    client: LLMClient,
+    source_text: str,
+    user_focus: str,
+    lang_instruction: str,
+    model: str,
 ) -> TopicResult:
+    cache_key = _make_stage_cache_key(
+        "stage1_topics",
+        {
+            "source_text": source_text,
+            "user_focus": user_focus,
+            "lang_instruction": lang_instruction,
+            "model": model,
+            "system_prompt": load_prompt("system"),
+            "prompt": load_prompt("extract_topics"),
+        },
+    )
+    cached = _load_stage_cache("stage1", cache_key)
+    if cached is not None:
+        raw_output = cached.get("raw_output") or {}
+        document_title = str(
+            cached.get("document_title")
+            or raw_output.get("document_title")
+            or "Untitled cheatsheet"
+        )
+        topics = [_normalize_topic(t, idx) for idx, t in enumerate(cached.get("topics") or [])]
+        if topics:
+            return TopicResult(
+                document_title=document_title,
+                topics=topics,
+                raw_output=raw_output,
+            )
+
     raw_json = await asyncio.to_thread(
-        _extract_topics, client, source_text, user_focus, lang_instruction
+        _extract_topics, client, source_text, user_focus, lang_instruction, model
     )
     document_title = raw_json.get("document_title") or "Untitled cheatsheet"
     raw_topics = raw_json.get("topics") or []
@@ -173,18 +275,33 @@ async def _run_topic_extraction(
         raise ValueError("LLM returned no topics -- source may be too short or unparseable")
 
     topics = [_normalize_topic(t, idx) for idx, t in enumerate(raw_topics)]
-    return TopicResult(document_title=document_title, topics=topics, raw_output=raw_json)
+    result = TopicResult(document_title=document_title, topics=topics, raw_output=raw_json)
+    if result.topics:
+        _save_stage_cache(
+            "stage1",
+            cache_key,
+            {
+                "document_title": result.document_title,
+                "topics": result.topics,
+                "raw_output": result.raw_output,
+            },
+        )
+    return result
 
 
 def _extract_topics(
-    client: LLMClient, source_text: str, user_focus: str, lang_instruction: str
+    client: LLMClient,
+    source_text: str,
+    user_focus: str,
+    lang_instruction: str,
+    model: str,
 ) -> dict[str, Any]:
     system = load_prompt("system") + f"\n\n## Language\n\n{lang_instruction}"
     template = load_prompt("extract_topics")
     user = template.replace("{user_focus}", user_focus).replace(
         "{source_text}", source_text
     )
-    return client.complete_json(system, user)
+    return client.complete_json(system, user, model=model)
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +316,7 @@ async def _run_outline_extraction(
     user_focus: str,
     topics: list[dict[str, Any]],
     lang_instruction: str,
+    model: str,
 ) -> OutlineResult:
     # Build per-topic source: full digest + topic-specific raw excerpts
     topic_sources: dict[str, str] = {}
@@ -219,6 +337,7 @@ async def _run_outline_extraction(
                 t,
                 topics,
                 lang_instruction,
+                model,
             )
             for t in topics
         ]
@@ -287,6 +406,7 @@ async def _run_outline_extraction(
                     t,
                     topics,
                     lang_instruction,
+                    model,
                 )
                 for t in retry_topics
             ]
@@ -413,6 +533,7 @@ def _extract_outline_for_topic(
     topic: dict[str, Any],
     all_topics: list[dict[str, Any]],
     lang_instruction: str,
+    model: str,
 ) -> tuple[ParseResult, str]:
     system = load_prompt("system") + f"\n\n## Language\n\n{lang_instruction}"
     template = load_prompt("extract_outline")
@@ -429,9 +550,119 @@ def _extract_outline_for_topic(
         .replace("{topic_anchor_terms}", anchor_terms)
         .replace("{other_topics}", other_topics)
     )
-    raw_markdown = client.complete(system, user)
+    raw_markdown = client.complete(system, user, model=model)
     result = parse_outline(raw_markdown, topic["id"])
     return result, raw_markdown
+
+
+async def _run_compression(
+    client: LLMClient,
+    blocks: list[Block],
+    topics: list[dict[str, Any]],
+    user_focus: str,
+    lang_instruction: str,
+    model: str,
+) -> list[Block]:
+    topic_ids = {topic["id"] for topic in topics}
+    block_by_id = {block.id: block for block in blocks}
+    blocks_by_topic: dict[str, list[Block]] = {topic["id"]: [] for topic in topics}
+
+    for block in blocks:
+        if block.type == BlockType.topic:
+            continue
+        topic_id = _find_topic_id_for_block(block, block_by_id, topic_ids)
+        if topic_id is not None:
+            blocks_by_topic[topic_id].append(block)
+
+    non_empty_groups = [(topic_id, items) for topic_id, items in blocks_by_topic.items() if items]
+    if not non_empty_groups:
+        return blocks
+
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(non_empty_groups))) as pool:
+        futures = [
+            loop.run_in_executor(
+                pool,
+                _compress_topic_blocks,
+                client,
+                topic_id,
+                items,
+                user_focus,
+                lang_instruction,
+                model,
+            )
+            for topic_id, items in non_empty_groups
+        ]
+        results = await asyncio.gather(*futures, return_exceptions=True)
+
+    for (_topic_id, items), result in zip(non_empty_groups, results):
+        if isinstance(result, Exception):
+            logger.warning("Stage 3 compression failed: %s", result)
+            for block in items:
+                block.content_short = None
+                block.content_ultra_short = None
+            continue
+
+        compressed_by_id = {entry["id"]: entry for entry in result}
+        for block in items:
+            compressed = compressed_by_id.get(block.id)
+            if compressed is None:
+                block.content_short = None
+                block.content_ultra_short = None
+                continue
+            block.content_short = _opt_str(compressed.get("content_short"))
+            block.content_ultra_short = _opt_str(compressed.get("content_ultra_short"))
+
+    return blocks
+
+
+def _compress_topic_blocks(
+    client: LLMClient,
+    topic_id: str,
+    blocks: list[Block],
+    user_focus: str,
+    lang_instruction: str,
+    model: str,
+) -> list[dict[str, str]]:
+    system = load_prompt("system") + f"\n\n## Language\n\n{lang_instruction}"
+    template = load_prompt("compress")
+    block_payload = [
+        {
+            "id": block.id,
+            "title": block.title,
+            "type": block.type.value,
+            "content": block.content,
+            "latex": block.latex,
+        }
+        for block in blocks
+    ]
+    user = (
+        template.replace("{user_focus}", user_focus).replace(
+            "{blocks_json}", json.dumps(block_payload, ensure_ascii=False, indent=2)
+        )
+    )
+    result = client.complete_json(system, user, model=model)
+    raw_blocks = result.get("blocks") or []
+    if not isinstance(raw_blocks, list):
+        raise ValueError(f"Compression stage returned invalid block list for topic {topic_id}")
+    return [
+        {
+            "id": str(item.get("id") or "").strip(),
+            "content_short": str(item.get("content_short") or "").strip(),
+            "content_ultra_short": str(item.get("content_ultra_short") or "").strip(),
+        }
+        for item in raw_blocks
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    ]
+
+
+def _resolve_stage_models(default_model: str) -> StageModels:
+    return StageModels(
+        comprehend=os.getenv("OPENROUTER_MODEL_STAGE0", default_model),
+        topics=os.getenv("OPENROUTER_MODEL_STAGE1", default_model),
+        outlines=os.getenv("OPENROUTER_MODEL_STAGE2", default_model),
+        compress=os.getenv("OPENROUTER_MODEL_STAGE3", default_model),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -545,3 +776,53 @@ def _clamp01(v: Any, default: float) -> float:
     if f > 1.0:
         return 1.0
     return f
+
+
+def _find_topic_id_for_block(
+    block: Block, block_by_id: dict[str, Block], topic_ids: set[str]
+) -> str | None:
+    parent_id = block.parent_id
+    visited: set[str] = set()
+    while parent_id:
+        if parent_id in topic_ids:
+            return parent_id
+        if parent_id in visited:
+            return None
+        visited.add(parent_id)
+        parent = block_by_id.get(parent_id)
+        if parent is None:
+            return None
+        parent_id = parent.parent_id
+    return None
+
+
+def _make_stage_cache_key(stage: str, payload: dict[str, Any]) -> str:
+    blob = json.dumps(
+        {"stage": stage, "payload": payload},
+        ensure_ascii=False,
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+def _load_stage_cache(stage_dir: str, cache_key: str) -> dict[str, Any] | None:
+    path = CACHE_DIR / stage_dir / f"{cache_key}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Ignoring unreadable cache file: %s", path)
+        return None
+
+
+def _save_stage_cache(stage_dir: str, cache_key: str, payload: dict[str, Any]) -> None:
+    path = CACHE_DIR / stage_dir / f"{cache_key}.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        logger.warning("Failed to write cache file %s: %s", path, exc)
