@@ -1,62 +1,93 @@
 from typing import List
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 
 from app.services.extractor import extract_project
+from app.services.file_reader import (
+    extract_text_from_files,
+    is_image,
+    is_supported_document,
+)
 
 router = APIRouter()
 
-
-MAX_SOURCE_LENGTH = 50_000  # ~12k tokens, enough for several lectures
-MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
-MAX_IMAGES = 10
+MAX_SOURCE_LENGTH = 50_000  # ~12k tokens
+MAX_FILE_BYTES = 20 * 1024 * 1024  # 20 MB per file
+MAX_FILES = 10
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB per image
 VALID_LANGUAGES = {"en", "zh", "mixed"}
-VALID_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
 
-async def _read_images(files: list[UploadFile]) -> list[bytes]:
-    """Validate and read uploaded image files."""
-    if len(files) > MAX_IMAGES:
-        raise HTTPException(
-            status_code=422, detail=f"Too many images (max {MAX_IMAGES})."
-        )
-    images: list[bytes] = []
-    for f in files:
-        if f.content_type not in VALID_IMAGE_TYPES:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Invalid image type: {f.content_type}. Accepted: png, jpeg, webp, gif.",
-            )
-        data = await f.read()
-        if len(data) > MAX_IMAGE_BYTES:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Image '{f.filename}' exceeds 5 MB limit.",
-            )
-        images.append(data)
-    return images
+# ---------- POST /api/ingest  (unified file upload) ----------
 
-
-@router.post("/ingest/text")
-async def ingest_text(
-    source_text: str = Form(...),
+@router.post("/ingest")
+async def ingest_files(
+    files: List[UploadFile] = File(...),
     user_focus: str = Form(""),
     language: str = Form("en"),
-    images: List[UploadFile] = File(default=[]),
     debug: bool = Query(False),
 ):
-    if not source_text or not source_text.strip():
-        raise HTTPException(status_code=422, detail="Source text is empty.")
-    if len(source_text) > MAX_SOURCE_LENGTH:
-        source_text = source_text[:MAX_SOURCE_LENGTH]
+    """
+    Accept any combination of document files and images.
 
+    Documents (PDF, Word, Excel, PPT, HTML, CSV, etc.) are converted to text
+    via markitdown, then fed into the LLM extraction pipeline.
+
+    Images are collected separately for future multimodal use but do NOT
+    participate in the Stage 0-3 pipeline in V1.
+    """
+    if len(files) > MAX_FILES:
+        raise HTTPException(status_code=422, detail=f"Too many files (max {MAX_FILES}).")
+
+    documents: list[tuple[str, bytes]] = []
+    images: list[bytes] = []
+
+    for f in files:
+        data = await f.read()
+
+        if is_image(f.content_type, f.filename):
+            if len(data) > MAX_IMAGE_BYTES:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Image '{f.filename}' exceeds 5 MB limit.",
+                )
+            images.append(data)
+        else:
+            if len(data) > MAX_FILE_BYTES:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"File '{f.filename}' exceeds 20 MB limit.",
+                )
+            if not is_supported_document(f.filename):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Unsupported file type: '{f.filename}'. "
+                    "Accepted: PDF, Word, Excel, PowerPoint, HTML, CSV, JSON, XML, plain text.",
+                )
+            documents.append((f.filename or "file", data))
+
+    if not documents:
+        raise HTTPException(
+            status_code=422,
+            detail="No document files provided. Upload at least one document "
+            "(PDF, Word, Excel, etc.).",
+        )
+
+    try:
+        source_text = await extract_text_from_files(documents)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Failed to read file: {e}")
+
+    if not source_text.strip():
+        raise HTTPException(status_code=422, detail="Files contain no extractable text.")
+
+    source_text = source_text[:MAX_SOURCE_LENGTH]
     lang = language if language in VALID_LANGUAGES else "en"
-    image_bytes = await _read_images(images) if images else None
 
     try:
         project = await extract_project(
-            source_text, user_focus, lang, debug=debug, images=image_bytes
+            source_text, user_focus, lang, debug=debug,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -65,38 +96,29 @@ async def ingest_text(
     return project.model_dump()
 
 
-@router.post("/ingest/pdf")
-async def ingest_pdf(
-    file: UploadFile = File(...),
-    user_focus: str = Form(""),
-    language: str = Form("en"),
-    images: List[UploadFile] = File(default=[]),
+# ---------- POST /api/ingest/text  (paste text) ----------
+
+class IngestTextRequest(BaseModel):
+    source_text: str
+    user_focus: str = ""
+    language: str = "en"
+
+
+@router.post("/ingest/text")
+async def ingest_text(
+    body: IngestTextRequest,
     debug: bool = Query(False),
 ):
-    if file.content_type not in ("application/pdf", "application/x-pdf"):
-        raise HTTPException(status_code=422, detail="Only PDF files are accepted.")
+    """Accept pasted text and feed it into the extraction pipeline."""
+    if not body.source_text or not body.source_text.strip():
+        raise HTTPException(status_code=422, detail="Source text is empty.")
 
-    pdf_bytes = await file.read()
-    if len(pdf_bytes) > MAX_PDF_BYTES:
-        raise HTTPException(status_code=422, detail="PDF exceeds 20 MB limit.")
-
-    import pymupdf4llm
-
-    try:
-        md_text = pymupdf4llm.to_markdown(pdf_bytes)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Failed to read PDF: {e}")
-
-    if not md_text or not md_text.strip():
-        raise HTTPException(status_code=422, detail="PDF contains no extractable text.")
-
-    source_text = md_text[:MAX_SOURCE_LENGTH]
-    lang = language if language in VALID_LANGUAGES else "en"
-    image_bytes = await _read_images(images) if images else None
+    source_text = body.source_text[:MAX_SOURCE_LENGTH]
+    lang = body.language if body.language in VALID_LANGUAGES else "en"
 
     try:
         project = await extract_project(
-            source_text, user_focus, lang, debug=debug, images=image_bytes
+            source_text, body.user_focus, lang, debug=debug,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))

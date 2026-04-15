@@ -8,6 +8,7 @@ interface Props {
   columns: Block[][]
   layout: ListLayout
   showTitle?: boolean
+  onSelectBlock?: (id: string) => void
 }
 
 export default function ListPreview({
@@ -15,6 +16,7 @@ export default function ListPreview({
   columns,
   layout,
   showTitle = true,
+  onSelectBlock,
 }: Props) {
   const renderedColumns = Array.from({ length: layout.columns }, (_, idx) => columns[idx] ?? [])
 
@@ -35,6 +37,7 @@ export default function ListPreview({
                 key={block.id}
                 block={block}
                 densityLevel={layout.density_level}
+                onSelectBlock={onSelectBlock}
               />
             ))}
           </div>
@@ -44,18 +47,59 @@ export default function ListPreview({
   )
 }
 
+export const IMAGE_MAX_WIDTH: Record<string, string> = {
+  small: '40%',
+  medium: '70%',
+  full: '100%',
+}
+
 export function BlockRender({
   block,
   densityLevel,
+  onSelectBlock,
 }: {
   block: Block
   densityLevel: number
+  onSelectBlock?: (id: string) => void
 }) {
+  const handleDoubleClick = onSelectBlock
+    ? (e: React.MouseEvent) => {
+        e.stopPropagation()
+        onSelectBlock(block.id)
+      }
+    : undefined
+
+  if (block.type === 'image' && block.image_data) {
+    const maxW = IMAGE_MAX_WIDTH[block.image_width ?? 'full'] ?? '100%'
+    const ar = block.image_natural_width && block.image_natural_height
+      ? `${block.image_natural_width} / ${block.image_natural_height}`
+      : undefined
+    return (
+      <div
+        style={styles.block}
+        data-block-id={block.id}
+        onDoubleClick={handleDoubleClick}
+      >
+        <img
+          src={block.image_data}
+          alt={block.title}
+          style={{ ...styles.blockImage, maxWidth: maxW, aspectRatio: ar }}
+        />
+        {block.image_caption && (
+          <div style={styles.imageCaption}>{block.image_caption}</div>
+        )}
+      </div>
+    )
+  }
   const text = pickVersion(block, densityLevel)
   return (
-    <div style={styles.block}>
+    <div
+      style={styles.block}
+      data-block-id={block.id}
+      onDoubleClick={handleDoubleClick}
+    >
       <div style={styles.blockTitle}>
-        {block.must_keep && <span style={styles.lock}>LOCK</span>}
+        {block.must_keep && <span style={styles.lock}>🔒</span>}
         {block.title}
       </div>
       {block.latex ? (
@@ -114,5 +158,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
   lock: {
     fontSize: '0.8em',
+  },
+  blockImage: {
+    display: 'block',
+    width: 'auto',
+    height: 'auto',
+    borderRadius: 2,
+  },
+  imageCaption: {
+    fontSize: '0.85em',
+    color: '#57606a',
+    marginTop: '0.15em',
+    fontStyle: 'italic',
   },
 }

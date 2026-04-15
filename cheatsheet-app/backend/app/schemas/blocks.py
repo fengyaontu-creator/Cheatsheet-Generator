@@ -12,6 +12,7 @@ class BlockType(str, Enum):
     procedure = "procedure"
     exam_tip = "exam_tip"
     example = "example"
+    image = "image"
 
 
 class Compressibility(str, Enum):
@@ -33,6 +34,9 @@ class Block(BaseModel):
     compressibility: Compressibility = Compressibility.medium
     must_keep: bool = False
     source_ref: Optional[str] = None
+    image_data: Optional[str] = None  # base64 data URI for image blocks
+    image_width: Optional[Literal["small", "medium", "full"]] = None
+    image_caption: Optional[str] = None
 
 
 class ExamProfile(BaseModel):

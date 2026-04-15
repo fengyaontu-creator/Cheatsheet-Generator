@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { sampleProject } from '../mock/sampleProject'
 import type {
+  Block,
   CheatsheetProject,
   ListLayout,
   MindmapLayout,
@@ -31,30 +32,82 @@ const DEFAULT_MINDMAP_LAYOUT: MindmapLayout = {
   density_level: 3,
 }
 
+const STORAGE_KEY = 'cheatsheet_editor_project'
+const HIDDEN_KEY = 'cheatsheet_editor_hidden'
+
+function loadInitialProject(injected: CheatsheetProject | undefined): CheatsheetProject {
+  // sessionStorage wins when present — it's the freshest state, including edits.
+  // UploadPanel clears it on new submissions, so a non-empty value means
+  // "we're refreshing an existing editor session", not "stale previous upload".
+  try {
+    const stored = sessionStorage.getItem(STORAGE_KEY)
+    if (stored) return JSON.parse(stored) as CheatsheetProject
+  } catch { /* ignore corrupt data */ }
+
+  // Fresh navigation from Create page (sessionStorage was just cleared)
+  return injected ?? sampleProject
+}
+
+function loadHiddenIds(): Set<string> {
+  try {
+    const stored = sessionStorage.getItem(HIDDEN_KEY)
+    if (stored) return new Set(JSON.parse(stored) as string[])
+  } catch { /* ignore */ }
+  return new Set()
+}
+
 export default function EditorPage() {
   const location = useLocation()
   const injected = (location.state as { project?: CheatsheetProject } | null)?.project
-  const [project, setProject] = useState<CheatsheetProject>(injected ?? sampleProject)
+  const [project, setProject] = useState<CheatsheetProject>(() => loadInitialProject(injected))
   const [importanceThreshold, setImportanceThreshold] = useState(0)
   const [fitMode, setFitMode] = useState<'auto' | 'manual'>('auto')
   const [targetPages, setTargetPages] = useState<number>(
     project.exam_profile?.target_pages || 1,
   )
   const [lastFit, setLastFit] = useState<FitResult | null>(null)
-  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(loadHiddenIds)
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
+  const insertImgRef = useRef<HTMLInputElement>(null)
   const activePageIdx = 0
   const page = project.pages[activePageIdx]
 
   const visibleBlocks = project.blocks.filter((b) => !hiddenIds.has(b.id))
+
+  // Persist project and hiddenIds to sessionStorage
+  useEffect(() => {
+    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(project)) }
+    catch { /* quota exceeded — ignore */ }
+  }, [project])
+
+  useEffect(() => {
+    try { sessionStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenIds])) }
+    catch { /* ignore */ }
+  }, [hiddenIds])
 
   useEffect(() => {
     if (fitMode === 'auto') {
       setImportanceThreshold(0)
     }
   }, [targetPages, fitMode])
+
+  // Scroll sidebar to the double-clicked block. rAF ensures the matching
+  // BlockCard has actually committed to the DOM (new selection may trigger
+  // highlight style change in the same render cycle).
+  useEffect(() => {
+    if (!selectedBlockId) return
+    const id = selectedBlockId
+    const raf = requestAnimationFrame(() => {
+      const el = document.querySelector(
+        `[data-sidebar-block-id="${CSS.escape(id)}"]`,
+      )
+      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [selectedBlockId])
 
   const handleFitResult = useCallback(
     (result: FitResult) => {
@@ -126,15 +179,51 @@ export default function EditorPage() {
     setProject((p) => {
       const idx = p.blocks.findIndex((b) => b.id === id)
       if (idx < 0) return p
-      // Find next visible neighbour in the given direction
+      const movingBlock = p.blocks[idx]
+
       let target = idx + dir
-      while (target >= 0 && target < p.blocks.length && hiddenIds.has(p.blocks[target].id)) {
-        target += dir
+      if (page.mode === 'mindmap') {
+        // Mindmap renders via buildTree(parent_id), so "adjacent" means
+        // "next non-hidden sibling with the same parent_id". Swapping with a
+        // non-sibling wouldn't change the tree grouping and would look like
+        // nothing happened to the user.
+        const movingParent = movingBlock.parent_id ?? null
+        while (target >= 0 && target < p.blocks.length) {
+          const cand = p.blocks[target]
+          const candParent = cand.parent_id ?? null
+          if (!hiddenIds.has(cand.id) && candParent === movingParent) break
+          target += dir
+        }
+      } else {
+        // List renders from page.block_ids (no topics). "Adjacent" means
+        // next non-hidden non-topic block; topics get skipped so sidebar
+        // and preview stay in sync.
+        const isTopic = movingBlock.type === 'topic'
+        const shouldSkip = (b: Block) =>
+          hiddenIds.has(b.id) || (!isTopic && b.type === 'topic')
+        while (target >= 0 && target < p.blocks.length && shouldSkip(p.blocks[target])) {
+          target += dir
+        }
       }
       if (target < 0 || target >= p.blocks.length) return p
+
+      const targetId = p.blocks[target].id
       const blocks = [...p.blocks]
       ;[blocks[idx], blocks[target]] = [blocks[target], blocks[idx]]
-      return { ...p, blocks }
+
+      // Mirror the swap in each page's block_ids so the list preview follows.
+      // Topics and rootless siblings (e.g. images with no parent_id swapping
+      // with a topic) aren't both in page.block_ids; bIdx < 0 falls through.
+      const pages = p.pages.map((pg) => {
+        const aIdx = pg.block_ids.indexOf(id)
+        const bIdx = pg.block_ids.indexOf(targetId)
+        if (aIdx < 0 || bIdx < 0) return pg
+        const block_ids = [...pg.block_ids]
+        ;[block_ids[aIdx], block_ids[bIdx]] = [block_ids[bIdx], block_ids[aIdx]]
+        return { ...pg, block_ids }
+      })
+
+      return { ...p, blocks, pages }
     })
   }
 
@@ -163,6 +252,49 @@ export default function EditorPage() {
       ...p,
       blocks: p.blocks.map((b) => (b.id === id ? { ...b, must_keep: !b.must_keep } : b)),
     }))
+  }
+
+  function setImageWidth(id: string, width: 'small' | 'medium' | 'full') {
+    setProject((p) => ({
+      ...p,
+      blocks: p.blocks.map((b) => (b.id === id ? { ...b, image_width: width } : b)),
+    }))
+  }
+
+  function handleInsertImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUri = reader.result as string
+      const name = file.name.replace(/\.[^.]+$/, '')
+      // Decode image to get natural dimensions for correct layout measurement
+      const img = new Image()
+      img.onload = () => {
+        const newBlock: Block = {
+          id: `img_${Date.now()}`,
+          type: 'image',
+          title: name,
+          content: '',
+          importance: 1,
+          compressibility: 'low',
+          must_keep: true,
+          image_data: dataUri,
+          image_width: 'full',
+          image_caption: '',
+          image_natural_width: img.naturalWidth,
+          image_natural_height: img.naturalHeight,
+        }
+        setProject((p) => ({
+          ...p,
+          blocks: [...p.blocks, newBlock],
+          pages: p.pages.map((pg) => ({ ...pg, block_ids: [...pg.block_ids, newBlock.id] })),
+        }))
+      }
+      img.src = dataUri
+    }
+    reader.readAsDataURL(file)
+    if (insertImgRef.current) insertImgRef.current.value = ''
   }
 
   async function handleExport() {
@@ -227,6 +359,19 @@ ${stylesheets}
           ← Cheatsheet
         </Link>
         <h2 style={styles.docTitle}>{project.document_title}</h2>
+        <input
+          ref={insertImgRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          style={{ display: 'none' }}
+          onChange={handleInsertImage}
+        />
+        <button
+          style={styles.insertImgBtn}
+          onClick={() => insertImgRef.current?.click()}
+        >
+          + Image
+        </button>
         <button style={styles.exportBtn} onClick={handleExport} disabled={exporting}>
           {exporting ? 'Exporting...' : 'Export PDF'}
         </button>
@@ -266,10 +411,12 @@ ${stylesheets}
           <BlockSidebar
             blocks={project.blocks}
             hiddenIds={hiddenIds}
+            selectedBlockId={selectedBlockId}
             onMove={moveBlock}
             onDelete={deleteBlock}
             onRestore={restoreBlock}
             onToggleLock={toggleMustKeep}
+            onSetImageWidth={setImageWidth}
           />
         </div>
         <PagePreview
@@ -280,6 +427,7 @@ ${stylesheets}
           targetPages={targetPages}
           fitMode={fitMode}
           onFitResult={handleFitResult}
+          onSelectBlock={setSelectedBlockId}
         />
       </main>
     </div>
@@ -314,6 +462,16 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     flex: 1,
     color: '#57606a',
+  },
+  insertImgBtn: {
+    padding: '8px 14px',
+    background: '#fff',
+    color: '#1f2328',
+    border: '1px solid #d0d7de',
+    borderRadius: 6,
+    fontWeight: 600,
+    fontSize: 13,
+    cursor: 'pointer',
   },
   exportBtn: {
     padding: '8px 16px',

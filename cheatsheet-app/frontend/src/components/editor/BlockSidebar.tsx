@@ -6,10 +6,12 @@ import BlockCard from './BlockCard'
 interface Props {
   blocks: Block[]
   hiddenIds: Set<string>
+  selectedBlockId?: string | null
   onMove: (id: string, dir: -1 | 1) => void
   onDelete: (id: string) => void
   onRestore: (id: string) => void
   onToggleLock: (id: string) => void
+  onSetImageWidth?: (id: string, width: 'small' | 'medium' | 'full') => void
 }
 
 interface HiddenGroup {
@@ -21,10 +23,12 @@ interface HiddenGroup {
 export default function BlockSidebar({
   blocks,
   hiddenIds,
+  selectedBlockId = null,
   onMove,
   onDelete,
   onRestore,
   onToggleLock,
+  onSetImageWidth,
 }: Props) {
   const visible = blocks.filter((b) => !hiddenIds.has(b.id))
   const hiddenGroups = useMemo(() => deriveHiddenGroups(blocks, hiddenIds), [blocks, hiddenIds])
@@ -44,9 +48,11 @@ export default function BlockSidebar({
             block={b}
             index={i}
             total={visible.length}
+            isSelected={b.id === selectedBlockId}
             onMove={onMove}
             onDelete={onDelete}
             onToggleLock={onToggleLock}
+            onSetImageWidth={onSetImageWidth}
           />
         ))}
         {hiddenGroups.length > 0 && (

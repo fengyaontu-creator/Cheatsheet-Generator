@@ -1,8 +1,8 @@
 import React, { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ingestPdf, ingestText } from '../../services/api'
+import { ingestFiles, ingestText } from '../../services/api'
 
-type Mode = 'pdf' | 'text'
+type Mode = 'files' | 'text'
 type Language = 'en' | 'zh' | 'mixed'
 
 const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
@@ -11,40 +11,60 @@ const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
   { value: 'mixed', label: 'Mixed (中英)' },
 ]
 
-const MAX_IMAGES = 10
-const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+const MAX_FILES = 10
+
+const ACCEPTED_EXTENSIONS = [
+  '.pdf', '.docx', '.pptx', '.xlsx', '.xls',
+  '.html', '.htm', '.csv', '.json', '.xml',
+  '.txt', '.md', '.rst', '.rtf',
+  '.png', '.jpg', '.jpeg', '.webp', '.gif',
+].join(',')
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+
+function fileTag(f: File): string {
+  if (IMAGE_TYPES.has(f.type)) return 'Image'
+  const ext = f.name.split('.').pop()?.toUpperCase() ?? 'File'
+  return ext
+}
 
 export default function UploadPanel() {
   const navigate = useNavigate()
-  const [mode, setMode] = useState<Mode>('pdf')
+  const [mode, setMode] = useState<Mode>('files')
   const [language, setLanguage] = useState<Language>('en')
   const [sourceText, setSourceText] = useState('')
   const [userFocus, setUserFocus] = useState('')
-  const [pdfFile, setPdfFile] = useState<File | null>(null)
-  const [imageFiles, setImageFiles] = useState<File[]>([])
+  const [files, setFiles] = useState<File[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const imgRef = useRef<HTMLInputElement>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (mode === 'pdf' && !pdfFile) {
-      setError('Please select a PDF file')
+    if (mode === 'files' && files.length === 0) {
+      setError('Please select at least one file.')
       return
     }
     if (mode === 'text' && !sourceText.trim()) {
-      setError('Source text is empty')
+      setError('Source text is empty.')
       return
     }
     setLoading(true)
     setError(null)
     try {
-      const imgs = imageFiles.length > 0 ? imageFiles : undefined
       const project =
-        mode === 'pdf'
-          ? await ingestPdf(pdfFile!, userFocus, language, imgs)
-          : await ingestText(sourceText, userFocus, language, imgs)
+        mode === 'files'
+          ? await ingestFiles(files, userFocus, language)
+          : await ingestText(sourceText, userFocus, language)
+      // Fresh project — clear any stale editor state from previous session
+      sessionStorage.removeItem('cheatsheet_editor_project')
+      sessionStorage.removeItem('cheatsheet_editor_hidden')
       navigate('/editor', { state: { project } })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -53,28 +73,23 @@ export default function UploadPanel() {
     }
   }
 
+  function addFiles(incoming: FileList | File[]) {
+    const arr = Array.from(incoming)
+    setFiles((prev) => [...prev, ...arr].slice(0, MAX_FILES))
+  }
+
   function handleDrop(e: React.DragEvent) {
     e.preventDefault()
-    const file = e.dataTransfer.files[0]
-    if (file?.type === 'application/pdf') setPdfFile(file)
-    else setError('Only PDF files are accepted.')
+    addFiles(e.dataTransfer.files)
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) setPdfFile(file)
+    if (e.target.files) addFiles(e.target.files)
+    if (fileRef.current) fileRef.current.value = ''
   }
 
-  function handleImageAdd(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? [])
-    const valid = files.filter((f) => ACCEPTED_IMAGE_TYPES.includes(f.type))
-    if (valid.length < files.length) setError('Some files were skipped (only png/jpeg/webp/gif).')
-    setImageFiles((prev) => [...prev, ...valid].slice(0, MAX_IMAGES))
-    if (imgRef.current) imgRef.current.value = ''
-  }
-
-  function removeImage(idx: number) {
-    setImageFiles((prev) => prev.filter((_, i) => i !== idx))
+  function removeFile(idx: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== idx))
   }
 
   const charCount = sourceText.length
@@ -85,10 +100,10 @@ export default function UploadPanel() {
       <div style={styles.tabs}>
         <button
           type="button"
-          style={mode === 'pdf' ? styles.tabActive : styles.tab}
-          onClick={() => setMode('pdf')}
+          style={mode === 'files' ? styles.tabActive : styles.tab}
+          onClick={() => setMode('files')}
         >
-          Upload PDF
+          Upload files
         </button>
         <button
           type="button"
@@ -100,9 +115,14 @@ export default function UploadPanel() {
       </div>
 
       {/* Source input */}
-      {mode === 'pdf' ? (
+      {mode === 'files' ? (
         <div style={styles.field}>
-          <label style={styles.label}>PDF file</label>
+          <label style={styles.label}>
+            Files
+            <span style={styles.hint}>
+              PDF, Word, Excel, PowerPoint, HTML, CSV, images, etc. (max {MAX_FILES})
+            </span>
+          </label>
           <div
             style={styles.dropZone}
             onDragOver={(e) => e.preventDefault()}
@@ -112,31 +132,47 @@ export default function UploadPanel() {
             <input
               ref={fileRef}
               type="file"
-              accept=".pdf,application/pdf"
+              accept={ACCEPTED_EXTENSIONS}
+              multiple
               style={{ display: 'none' }}
               onChange={handleFileChange}
             />
-            {pdfFile ? (
-              <div style={styles.fileInfo}>
-                <span>{pdfFile.name}</span>
-                <span style={styles.hint}>
-                  {(pdfFile.size / 1024 / 1024).toFixed(1)} MB
-                </span>
-                <button
-                  type="button"
-                  style={styles.removeBtn}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setPdfFile(null)
-                    if (fileRef.current) fileRef.current.value = ''
-                  }}
-                >
-                  Remove
-                </button>
+            {files.length > 0 ? (
+              <div style={styles.fileList} onClick={(e) => e.stopPropagation()}>
+                {files.map((f, i) => (
+                  <div key={`${f.name}-${i}`} style={styles.fileRow}>
+                    {IMAGE_TYPES.has(f.type) && (
+                      <img
+                        src={URL.createObjectURL(f)}
+                        alt={f.name}
+                        style={styles.fileThumb}
+                      />
+                    )}
+                    <span style={styles.fileTag}>{fileTag(f)}</span>
+                    <span style={styles.fileName}>{f.name}</span>
+                    <span style={styles.hint}>{formatSize(f.size)}</span>
+                    <button
+                      type="button"
+                      style={styles.removeBtn}
+                      onClick={() => removeFile(i)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                {files.length < MAX_FILES && (
+                  <button
+                    type="button"
+                    style={styles.addMoreBtn}
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    + Add more files
+                  </button>
+                )}
               </div>
             ) : (
               <span style={styles.hint}>
-                Drop a PDF here or click to browse (max 20 MB)
+                Drop files here or click to browse
               </span>
             )}
           </div>
@@ -174,52 +210,6 @@ export default function UploadPanel() {
               {opt.label}
             </button>
           ))}
-        </div>
-      </div>
-
-      {/* Supplementary images */}
-      <div style={styles.field}>
-        <label style={styles.label}>
-          Reference images{' '}
-          <span style={styles.hint}>
-            optional -- diagrams, formulas, screenshots the LLM should consider (max {MAX_IMAGES})
-          </span>
-        </label>
-        <input
-          ref={imgRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          multiple
-          style={{ display: 'none' }}
-          onChange={handleImageAdd}
-        />
-        <div style={styles.imageRow}>
-          {imageFiles.map((f, i) => (
-            <div key={`${f.name}-${i}`} style={styles.imageThumb}>
-              <img
-                src={URL.createObjectURL(f)}
-                alt={f.name}
-                style={styles.thumbImg}
-              />
-              <button
-                type="button"
-                style={styles.thumbRemove}
-                onClick={() => removeImage(i)}
-              >
-                x
-              </button>
-            </div>
-          ))}
-          {imageFiles.length < MAX_IMAGES && (
-            <button
-              type="button"
-              style={styles.addImageBtn}
-              onClick={() => imgRef.current?.click()}
-              disabled={loading}
-            >
-              + Add image
-            </button>
-          )}
         </div>
       </div>
 
@@ -308,11 +298,41 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     textAlign: 'center' as const,
   },
-  fileInfo: {
+  fileList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    width: '100%',
+  },
+  fileRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     fontSize: 13,
+  },
+  fileThumb: {
+    width: 28,
+    height: 28,
+    objectFit: 'cover' as const,
+    borderRadius: 4,
+    flexShrink: 0,
+  },
+  fileTag: {
+    padding: '2px 8px',
+    background: '#f6f8fa',
+    border: '1px solid #d0d7de',
+    borderRadius: 4,
+    fontSize: 10,
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    color: '#57606a',
+    flexShrink: 0,
+  },
+  fileName: {
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
   },
   removeBtn: {
     padding: '4px 10px',
@@ -322,6 +342,16 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     fontSize: 12,
     cursor: 'pointer',
+    flexShrink: 0,
+  },
+  addMoreBtn: {
+    padding: '6px 0',
+    background: 'none',
+    border: 'none',
+    fontSize: 12,
+    color: '#0969da',
+    cursor: 'pointer',
+    textAlign: 'left' as const,
   },
   textarea: {
     width: '100%',
@@ -368,54 +398,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 600,
     color: '#fff',
-    cursor: 'pointer',
-  },
-  imageRow: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: 8,
-    alignItems: 'center',
-  },
-  imageThumb: {
-    position: 'relative' as const,
-    width: 72,
-    height: 72,
-    borderRadius: 6,
-    overflow: 'hidden',
-    border: '1px solid #d0d7de',
-  },
-  thumbImg: {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover' as const,
-  },
-  thumbRemove: {
-    position: 'absolute' as const,
-    top: 2,
-    right: 2,
-    width: 18,
-    height: 18,
-    padding: 0,
-    background: 'rgba(0,0,0,0.55)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '50%',
-    fontSize: 11,
-    lineHeight: '18px',
-    textAlign: 'center' as const,
-    cursor: 'pointer',
-  },
-  addImageBtn: {
-    width: 72,
-    height: 72,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: '2px dashed #d0d7de',
-    borderRadius: 6,
-    background: 'none',
-    fontSize: 12,
-    color: '#57606a',
     cursor: 'pointer',
   },
   submit: {
