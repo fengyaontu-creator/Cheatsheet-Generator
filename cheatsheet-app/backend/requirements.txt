@@ -6,4 +6,4 @@ python-multipart
 openai
 python-dotenv
 playwright
-pymupdf4llm
+markitdown[all]

@@ -35,44 +35,37 @@ async function handleResponse(res: Response, label: string): Promise<CheatsheetP
   return (await res.json()) as CheatsheetProject
 }
 
-function appendImages(form: FormData, images?: File[]) {
-  if (images) {
-    for (const img of images) form.append('images', img)
-  }
-}
-
-export async function ingestPdf(
-  file: File,
+/** Unified file upload — documents + images in one request. */
+export async function ingestFiles(
+  files: File[],
   userFocus: string,
   language: string = 'en',
-  images?: File[],
 ): Promise<CheatsheetProject> {
   const form = new FormData()
-  form.append('file', file)
+  for (const f of files) form.append('files', f)
   form.append('user_focus', userFocus)
   form.append('language', language)
-  appendImages(form, images)
-  const res = await fetch(`${API_URL}/api/ingest/pdf`, {
+  const res = await fetch(`${API_URL}/api/ingest`, {
     method: 'POST',
     body: form,
   })
-  return handleResponse(res, 'PDF ingest failed')
+  return handleResponse(res, 'File ingest failed')
 }
 
+/** Paste text — JSON body. */
 export async function ingestText(
   sourceText: string,
   userFocus: string,
   language: string = 'en',
-  images?: File[],
 ): Promise<CheatsheetProject> {
-  const form = new FormData()
-  form.append('source_text', sourceText)
-  form.append('user_focus', userFocus)
-  form.append('language', language)
-  appendImages(form, images)
   const res = await fetch(`${API_URL}/api/ingest/text`, {
     method: 'POST',
-    body: form,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      source_text: sourceText,
+      user_focus: userFocus,
+      language,
+    }),
   })
   return handleResponse(res, 'Ingest failed')
 }
