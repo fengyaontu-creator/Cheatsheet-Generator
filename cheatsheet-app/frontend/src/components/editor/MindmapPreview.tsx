@@ -3,6 +3,7 @@ import type { MindmapLayout } from '../../types/block'
 import { pickMindmapVersion } from '../../utils/density'
 import type { MindmapAtom } from '../../utils/hierarchy'
 import Katex from '../ui/Katex'
+import { IMAGE_MAX_WIDTH } from './ListPreview'
 
 /* ── Public props ── */
 
@@ -11,6 +12,7 @@ interface Props {
   columns: MindmapAtom[][]
   layout: MindmapLayout
   showTitle?: boolean
+  onSelectBlock?: (id: string) => void
 }
 
 /* ── Fragment: a contiguous run of atoms from the same topic in one column ── */
@@ -29,6 +31,7 @@ export default function MindmapPreview({
   columns,
   layout,
   showTitle = true,
+  onSelectBlock,
 }: Props) {
   const renderedColumns = Array.from(
     { length: layout.orientation === 'horizontal' ? 2 : 1 },
@@ -74,6 +77,7 @@ export default function MindmapPreview({
                   rowGap={rowGap}
                   topicGap={topicGap}
                   densityLevel={layout.density_level}
+                  onSelectBlock={onSelectBlock}
                 />
               ))}
             </div>
@@ -97,11 +101,38 @@ export function MindmapAtomRender({
   rowGap: string
   densityLevel: number
 }) {
+  const block = atom.node.block
+
+  // Image check BEFORE topic-header — image blocks without parent_id
+  // become topic-headers in the tree, but must still render as images.
+  if (block?.type === 'image' && block.image_data) {
+    const ar = block.image_natural_width && block.image_natural_height
+      ? `${block.image_natural_width} / ${block.image_natural_height}`
+      : undefined
+    const maxW = IMAGE_MAX_WIDTH[block.image_width ?? 'full'] ?? '100%'
+    return (
+      <div
+        style={{
+          paddingLeft: `calc((0.35em + 1px + ${indent}) * ${atom.depth})`,
+          marginBottom: rowGap,
+        }}
+      >
+        <img
+          src={block.image_data}
+          alt={atom.title}
+          style={{ ...imageStyle, maxWidth: maxW, aspectRatio: ar }}
+        />
+        {block.image_caption && (
+          <div style={imageCaptionStyle}>{block.image_caption}</div>
+        )}
+      </div>
+    )
+  }
+
   if (atom.kind === 'topic-header') {
     return <div style={topicHeaderStyle}>{atom.title}</div>
   }
 
-  const block = atom.node.block
   const subtitle =
     block && block.type !== 'topic' ? pickMindmapVersion(block, densityLevel) : ''
   const latex = block?.latex?.trim()
@@ -177,18 +208,63 @@ function FragmentRender({
   rowGap,
   topicGap,
   densityLevel,
+  onSelectBlock,
 }: {
   fragment: MindmapFragment
   indent: string
   rowGap: string
   topicGap: string
   densityLevel: number
+  onSelectBlock?: (id: string) => void
 }) {
+  // If the topic itself is an image block, render the image instead of a text header
+  const topicBlock = fragment.atoms[0]?.node.block
+  if (topicBlock?.type === 'image' && topicBlock.image_data) {
+    const ar = topicBlock.image_natural_width && topicBlock.image_natural_height
+      ? `${topicBlock.image_natural_width} / ${topicBlock.image_natural_height}`
+      : undefined
+    const maxW = IMAGE_MAX_WIDTH[topicBlock.image_width ?? 'full'] ?? '100%'
+    return (
+      <div
+        style={{ ...topicGroupStyle, marginBottom: topicGap }}
+        data-block-id={topicBlock.id}
+        onDoubleClick={
+          onSelectBlock
+            ? (e) => {
+                e.stopPropagation()
+                onSelectBlock(topicBlock.id)
+              }
+            : undefined
+        }
+      >
+        <img
+          src={topicBlock.image_data}
+          alt={fragment.topicTitle}
+          style={{ ...imageStyle, maxWidth: maxW, aspectRatio: ar }}
+        />
+        {topicBlock.image_caption && (
+          <div style={imageCaptionStyle}>{topicBlock.image_caption}</div>
+        )}
+      </div>
+    )
+  }
+
   const contentAtoms = fragment.atoms.filter((a) => a.kind !== 'topic-header')
 
   return (
     <div style={{ ...topicGroupStyle, marginBottom: topicGap }}>
-      <div style={topicHeaderStyle}>
+      <div
+        style={topicHeaderStyle}
+        data-block-id={fragment.topicId}
+        onDoubleClick={
+          onSelectBlock
+            ? (e) => {
+                e.stopPropagation()
+                onSelectBlock(fragment.topicId)
+              }
+            : undefined
+        }
+      >
         {fragment.topicTitle}
         {fragment.isContinuation && (
           <span style={contBadgeStyle}> (cont.)</span>
@@ -203,6 +279,7 @@ function FragmentRender({
               indent={indent}
               rowGap={rowGap}
               densityLevel={densityLevel}
+              onSelectBlock={onSelectBlock}
             />
           ))}
         </div>
@@ -216,26 +293,63 @@ function AtomLine({
   indent,
   rowGap,
   densityLevel,
+  onSelectBlock,
 }: {
   atom: MindmapAtom
   indent: string
   rowGap: string
   densityLevel: number
+  onSelectBlock?: (id: string) => void
 }) {
   const block = atom.node.block
+  // depth 1 = direct child of topic, already inside one childrenWrap
+  const extraDepth = atom.depth - 1
+  const depthStyle =
+    extraDepth > 0
+      ? { paddingLeft: `calc((0.35em + 1px + ${indent}) * ${extraDepth})` }
+      : undefined
+
+  const blockId = block?.id
+  const handleDoubleClick =
+    onSelectBlock && blockId
+      ? (e: React.MouseEvent) => {
+          e.stopPropagation()
+          onSelectBlock(blockId)
+        }
+      : undefined
+
+  if (block?.type === 'image' && block.image_data) {
+    const ar = block.image_natural_width && block.image_natural_height
+      ? `${block.image_natural_width} / ${block.image_natural_height}`
+      : undefined
+    const maxW = IMAGE_MAX_WIDTH[block.image_width ?? 'full'] ?? '100%'
+    return (
+      <div
+        style={{ ...depthStyle, marginBottom: rowGap }}
+        data-block-id={blockId}
+        onDoubleClick={handleDoubleClick}
+      >
+        <img
+          src={block.image_data}
+          alt={atom.title}
+          style={{ ...imageStyle, maxWidth: maxW, aspectRatio: ar }}
+        />
+        {block.image_caption && (
+          <div style={imageCaptionStyle}>{block.image_caption}</div>
+        )}
+      </div>
+    )
+  }
+
   const subtitle =
     block && block.type !== 'topic' ? pickMindmapVersion(block, densityLevel) : ''
   const latex = block?.latex?.trim()
-  // depth 1 = direct child of topic, already inside one childrenWrap
-  const extraDepth = atom.depth - 1
 
   return (
     <div
-      style={
-        extraDepth > 0
-          ? { paddingLeft: `calc((0.35em + 1px + ${indent}) * ${extraDepth})` }
-          : undefined
-      }
+      style={depthStyle}
+      data-block-id={blockId}
+      onDoubleClick={handleDoubleClick}
     >
       <div style={{ ...rowStyle, marginBottom: rowGap }}>
         <span style={connectorStyle} />
@@ -336,4 +450,18 @@ const contBadgeStyle: React.CSSProperties = {
   fontWeight: 400,
   fontSize: '0.85em',
   color: '#57606a',
+}
+
+const imageStyle: React.CSSProperties = {
+  display: 'block',
+  maxWidth: '100%',
+  height: 'auto',
+  borderRadius: 2,
+}
+
+const imageCaptionStyle: React.CSSProperties = {
+  fontSize: '0.85em',
+  color: '#57606a',
+  marginTop: '0.15em',
+  fontStyle: 'italic',
 }

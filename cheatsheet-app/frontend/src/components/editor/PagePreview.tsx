@@ -36,6 +36,7 @@ interface Props {
   targetPages?: number
   fitMode?: 'auto' | 'manual'
   onFitResult?: (r: FitResult) => void
+  onSelectBlock?: (id: string) => void
 }
 
 export default function PagePreview({
@@ -46,6 +47,7 @@ export default function PagePreview({
   targetPages = 1,
   fitMode = 'manual',
   onFitResult,
+  onSelectBlock,
 }: Props) {
   const filteredBlocks = useMemo(
     () => filterByImportance(blocks, importanceThreshold),
@@ -406,6 +408,7 @@ export default function PagePreview({
                   columns={pageContent as Block[][]}
                   layout={page.layout}
                   showTitle={isFirstPage}
+                  onSelectBlock={onSelectBlock}
                 />
               ) : (
                 <MindmapPreview
@@ -413,6 +416,7 @@ export default function PagePreview({
                   columns={pageContent as MindmapAtom[][]}
                   layout={page.layout}
                   showTitle={isFirstPage}
+                  onSelectBlock={onSelectBlock}
                 />
               ))}
           </div>

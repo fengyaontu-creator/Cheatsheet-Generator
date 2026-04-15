@@ -27,6 +27,8 @@ export interface Block {
   image_data?: string       // base64 data URI for image blocks
   image_width?: 'small' | 'medium' | 'full'
   image_caption?: string
+  image_natural_width?: number
+  image_natural_height?: number
 }
 
 export interface ExamProfile {
