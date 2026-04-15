@@ -1,95 +1,66 @@
-## Task: Produce an exhaustive evidence inventory of the source material
+## Task: Produce a concise evidence digest of the source material
 
-Read the SOURCE MATERIAL below. Extract every exam-relevant fact into a structured inventory. This inventory will be the PRIMARY input for a cheatsheet generator -- if a fact is missing here, it will likely be lost. Be exhaustive and precise.
+Read the SOURCE MATERIAL below. Extract every exam-relevant idea into a **lightweight digest**. A downstream stage will cluster and classify these into cheatsheet blocks; your job is only to make sure nothing exam-worthy is lost and to preserve precise wording where precision matters (formulas, thresholds, exact conditions).
+
+Prefer a short, dense bullet over a verbose one. This digest is read by another LLM, not a human student, so optimize for information density over readability.
 
 ## User focus
 
 {user_focus}
 
-(Bias toward focused areas if provided, but do NOT omit unfocused content -- just deprioritize it.)
-
 ## Output format
 
-Write a Markdown document with these sections in order. Use the exact item template shown. If a section has no relevant content, write "(none)" and move on.
+Write a Markdown document with the sections below. Treat them as a **guide, not a rigid template** -- each bullet should be as short as possible while preserving what an exam writer would care about. If a section has no relevant content, write `(none)` and move on.
 
 ### Overview
 
-2-3 sentences only. Subject, level, and the 3-5 most critical takeaways. Keep this very short.
+2-3 sentences: subject, level, and the 3-5 most critical takeaways.
 
 ### Facts & definitions
 
-For each concept, term, or principle:
+One bullet per term or principle. Include conditions inline.
 
-- **Name:** {term}
-  - Anchor terms: {3-8 keywords/symbols that identify this concept}
-  - Related: {other concepts it connects to}
-  - Definition: {precise definition -- copy exact wording/conditions from source}
-  - Conditions/scope: {when it applies, when it doesn't}
+- **{term}** -- {definition; include scope/conditions inline when present}
 
 ### Formulas & quantitative facts
 
-For each formula, threshold, numeric fact, or precise condition:
+One bullet per expression, threshold, or numeric fact. LaTeX for math (no `$` delimiters).
 
-- **Name:** {formula/fact name}
-  - Anchor terms: {keywords}
-  - Related: {parent concept, use cases}
-  - Expression: {LaTeX notation}
-  - Variables: {what each symbol means, with units if given}
-  - When to use: {trigger condition or context}
-  - Caveats: {assumptions, edge cases, common misapplications}
+- **{name}** -- `{LaTeX}`; {variables + units + when it applies, one short sentence}
 
 ### Comparisons & contrasts
 
-For each A-vs-B distinction or tradeoff:
+One bullet per A-vs-B distinction.
 
-- **Name:** {A vs B}
-  - Anchor terms: {keywords for both sides}
-  - Dimension: {what is being compared -- speed, accuracy, assumptions, etc.}
-  - A: {key properties}
-  - B: {key properties}
-  - Discriminating condition: {when to pick A over B, or the tradeoff}
+- **{A vs B}** -- {what differs + the discriminating condition}
 
 ### Procedures & steps
 
-For each multi-step process, algorithm, or decision procedure:
+One bullet per multi-step process.
 
-- **Name:** {procedure name}
-  - Anchor terms: {keywords}
-  - Related: {what concept this implements}
-  - Steps: {numbered list, exact order}
-  - Decision points: {where choices are made and what determines the choice}
+- **{procedure}** -- {step1 -> step2 -> step3; note decision points inline}
 
 ### Pitfalls & edge cases
 
-For each common mistake, gotcha, or exception:
+One bullet per gotcha.
 
-- **Name:** {short description}
-  - Anchor terms: {keywords}
-  - Trigger: {what situation leads to this mistake}
-  - Wrong assumption: {what students typically think}
-  - Correct behavior: {what actually happens}
-  - Cue: {"if you see X, think Y" format}
+- **{short description}** -- if {trigger}, students assume {wrong}, actually {right}
 
 ### Key examples
 
-For each worked example, case study, or illustrative scenario:
+One bullet per worked example.
 
-- **Name:** {example title}
-  - Anchor terms: {keywords}
-  - Related: {concept(s) it illustrates}
-  - Setup: {problem statement}
-  - Key steps/result: {solution outline or punchline}
-  - Takeaway: {what it demonstrates}
+- **{name}** -- {setup -> key step -> takeaway, one line}
 
 ## Rules
 
-- Be EXHAUSTIVE -- include every distinct fact, formula, condition, step, and contrast. Length is fine. Omission is not.
-- Be PRECISE -- copy exact values, thresholds, variable names, conditions. Do not paraphrase numbers or weaken conditions (e.g., "roughly 0.05" when the source says "< 0.05").
-- Each item must be ATOMIC -- one concept/formula/comparison per bullet. Do not merge multiple ideas.
-- Anchor terms are CRITICAL -- they will be used to cluster items into topics later. Choose terms that uniquely identify this item.
-- Do NOT add information not in the source.
-- Do NOT write introductory/concluding commentary.
-- Output ONLY the Markdown inventory.
+- Be COMPLETE on facts -- every distinct formula, threshold, condition, step, and contrast must be captured somewhere. Omission is the primary risk.
+- Be PRECISE on values -- copy exact numbers, variable names, and conditions. Do not paraphrase thresholds (keep `< 0.05` as `< 0.05`, not `roughly 0.05`).
+- Each bullet is ONE atomic fact or relationship.
+- **Length target: the whole digest should be at most ~1.5x the source length.** If you find yourself expanding the source, compress.
+- Do NOT invent information not in the source.
+- Do NOT add introductions, conclusions, or meta-commentary about the source.
+- Output ONLY the Markdown digest.
 
 ## SOURCE MATERIAL
 

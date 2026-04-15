@@ -19,8 +19,6 @@ These topics are handled elsewhere. Do not repeat their core content unless a ve
 
 {user_focus}
 
-(If the focus section above is empty or says "none", treat all material as equally weighted. Otherwise, bias your selection and importance scores toward the focused areas.)
-
 ## Output format
 
 Write a plain Markdown document. Heading levels encode hierarchy:
@@ -68,6 +66,8 @@ In 2008, static risk budgets led to 40%+ drawdowns. Adaptive budgets cut losses 
 
 ## Rules
 
+- **Every heading MUST be followed by a non-empty content paragraph** (after the metadata line). A heading with only a metadata line and no body is forbidden. If you cannot produce at least one concrete sentence of exam-worthy content for a heading, **do not output that heading at all**. Skeleton-only entries are dropped downstream and waste tokens.
+- Exception: `formula` blocks may omit the main paragraph **only if** the `**latex:**` line alone fully conveys the content. Prefer including a short explanation anyway.
 - Aim for **3-10 blocks** at the `##` level. Each `##` may have 0-5 sub-blocks.
 - Encourage **2-3 levels** of nesting where the content naturally supports it. Sub-procedures, sub-definitions, examples under a concept -- these belong as `###` children. Don't force nesting where a flat list is natural.
 - Stay tightly inside the current topic boundary. If a fact belongs more naturally to a sibling topic, omit it here.

@@ -116,9 +116,9 @@ async def extract_project(
         client, comprehension.summary, focus, lang_instruction, stage_models.topics
     )
     if debug:
-        topic_names = [t["title"] for t in topic_result.topics]
-        logger.info("=== Stage 1: Topics ===\n%s", topic_names)
-        warnings.append(f"[debug] Stage 1 topics: {topic_names}")
+        topic_summary = [_format_topic_debug_summary(t) for t in topic_result.topics]
+        logger.info("=== Stage 1: Topics ===\n%s", "\n".join(topic_summary))
+        warnings.append(f"[debug] Stage 1 topics: {topic_summary}")
         warnings.append(f"[debug] Stage 1 model: {stage_models.topics}")
 
     if len(topic_result.topics) > MAX_TOPICS:
@@ -357,6 +357,7 @@ async def _run_outline_extraction(
     parser_warnings: list[str] = []
     raw_outputs: dict[str, str] = {}
     retry_topics: list[dict[str, Any]] = []
+    empty_dropped_total = 0
 
     for topic, result in zip(topics, results):
         topic_block = Block(
@@ -380,10 +381,10 @@ async def _run_outline_extraction(
         raw_outputs[topic["id"]] = raw_md
         parser_warnings.extend(parse_result.warnings)
 
-        content_blocks = [
+        content_blocks, dropped = _filter_empty_blocks(
             _normalize_outline_block(rb) for rb in parse_result.blocks
-        ]
-        content_blocks = [b for b in content_blocks if b is not None]
+        )
+        empty_dropped_total += dropped
 
         if not content_blocks:
             # Zero blocks -- queue for retry with more excerpts
@@ -431,10 +432,10 @@ async def _run_outline_extraction(
             raw_outputs[topic["id"]] = f"(retry) {raw_md}"
             parser_warnings.extend(parse_result.warnings)
 
-            retry_blocks = [
+            retry_blocks, dropped = _filter_empty_blocks(
                 _normalize_outline_block(rb) for rb in parse_result.blocks
-            ]
-            retry_blocks = [b for b in retry_blocks if b is not None]
+            )
+            empty_dropped_total += dropped
 
             if retry_blocks:
                 all_blocks.extend(retry_blocks)
@@ -447,12 +448,47 @@ async def _run_outline_extraction(
     if not any(b.type != BlockType.topic for b in all_blocks):
         raise RuntimeError("All topic outline extraction passes failed.")
 
+    # Replace per-block "empty content body" noise with a single aggregated line.
+    # The detailed per-block warnings stay in raw_outputs for debug inspection,
+    # but the user-facing banner stack only needs one summary.
+    cleaned_warnings = [
+        w for w in parser_warnings if "empty content body" not in w
+    ]
+    if empty_dropped_total > 0:
+        cleaned_warnings.append(
+            f"Dropped {empty_dropped_total} empty block(s) from Stage 2 output."
+        )
+
     return OutlineResult(
         blocks=all_blocks,
         failed_topics=failed_topics,
-        parser_warnings=parser_warnings,
+        parser_warnings=cleaned_warnings,
         raw_outputs=raw_outputs,
     )
+
+
+def _filter_empty_blocks(
+    candidates,
+) -> tuple[list[Block], int]:
+    """Keep blocks with usable content; return (kept, dropped_count).
+
+    A block is considered usable when:
+    - normalize produced a Block (not None), AND
+    - it has a non-empty content body, OR it's a formula with a latex body
+      (formula latex IS the content).
+    """
+    kept: list[Block] = []
+    dropped = 0
+    for block in candidates:
+        if block is None:
+            continue
+        has_body = bool(block.content and block.content.strip())
+        has_formula_latex = block.type == BlockType.formula and bool(block.latex)
+        if has_body or has_formula_latex:
+            kept.append(block)
+        else:
+            dropped += 1
+    return kept, dropped
 
 
 def _extract_relevant_excerpts(
@@ -731,6 +767,11 @@ def _normalize_topic(raw: dict[str, Any], idx: int) -> dict[str, Any]:
         "must_keep": must_keep,
         "anchor_terms": anchor_terms[:8],
     }
+
+
+def _format_topic_debug_summary(topic: dict[str, Any]) -> str:
+    anchors = ", ".join(topic.get("anchor_terms") or []) or "none"
+    return f"{topic['title']}: [{anchors}]"
 
 
 def _normalize_outline_block(raw: dict[str, Any]) -> Block | None:

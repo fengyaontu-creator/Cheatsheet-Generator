@@ -20,8 +20,6 @@ Do not rewrite the original content. Do not change ids. Do not add or remove blo
 
 {user_focus}
 
-(If empty or "none", treat all blocks equally. Otherwise, bias compression so focused content remains slightly more explicit while still shorter.)
-
 ## Compression rules
 
 - Preserve the core meaning and exam utility of each block.
