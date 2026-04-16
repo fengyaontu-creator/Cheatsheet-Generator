@@ -33,6 +33,7 @@ MAX_TOPICS = 12
 MAX_WORKERS = 4
 EXCERPT_MAX_CHARS = 5000
 EXCERPT_MAX_CHARS_RETRY = 10000
+STAGE1_RAW_EXCERPT_CHARS = 8000
 TITLE_WEIGHT = 3
 ANCHOR_WEIGHT = 1
 MULTI_HIT_BONUS = 2  # bonus when 3+ distinct terms match
@@ -111,9 +112,9 @@ async def extract_project(
         warnings.append(f"[debug] Stage 0 summary length: {len(comprehension.summary)} chars")
         warnings.append(f"[debug] Stage 0 model: {stage_models.comprehend}")
 
-    # Stage 1: topic extraction (uses digest only)
+    # Stage 1: topic extraction (digest authoritative + truncated raw for exact tokens)
     topic_result = await _run_topic_extraction(
-        client, comprehension.summary, focus, lang_instruction, stage_models.topics
+        client, comprehension.summary, source_text, focus, lang_instruction, stage_models.topics
     )
     if debug:
         topic_summary = [_format_topic_debug_summary(t) for t in topic_result.topics]
@@ -243,15 +244,18 @@ def _comprehend(
 
 async def _run_topic_extraction(
     client: LLMClient,
-    source_text: str,
+    summary: str,
+    raw_source: str,
     user_focus: str,
     lang_instruction: str,
     model: str,
 ) -> TopicResult:
+    raw_excerpt = raw_source[:STAGE1_RAW_EXCERPT_CHARS]
     cache_key = _make_stage_cache_key(
         "stage1_topics",
         {
-            "source_text": source_text,
+            "summary": summary,
+            "raw_excerpt": raw_excerpt,
             "user_focus": user_focus,
             "lang_instruction": lang_instruction,
             "model": model,
@@ -276,7 +280,7 @@ async def _run_topic_extraction(
             )
 
     raw_json = await asyncio.to_thread(
-        _extract_topics, client, source_text, user_focus, lang_instruction, model
+        _extract_topics, client, summary, raw_excerpt, user_focus, lang_instruction, model
     )
     document_title = raw_json.get("document_title") or "Untitled cheatsheet"
     raw_topics = raw_json.get("topics") or []
@@ -300,15 +304,17 @@ async def _run_topic_extraction(
 
 def _extract_topics(
     client: LLMClient,
-    source_text: str,
+    summary: str,
+    raw_excerpt: str,
     user_focus: str,
     lang_instruction: str,
     model: str,
 ) -> dict[str, Any]:
     system = load_prompt("system") + f"\n\n## Language\n\n{lang_instruction}"
     template = load_prompt("extract_topics")
+    source_block = _build_topic_source(summary, raw_excerpt)
     user = template.replace("{user_focus}", user_focus).replace(
-        "{source_text}", source_text
+        "{source_text}", source_block
     )
     return client.complete_json(system, user, model=model)
 

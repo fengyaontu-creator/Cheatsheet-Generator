@@ -46,6 +46,11 @@ Return a JSON object with this exact shape:
 
 ## SOURCE MATERIAL
 
-The source below may be a structured comprehension digest rather than raw notes. Treat it as authoritative -- it contains all the information you need.
+The source below contains two sections:
+
+1. **STRUCTURED DIGEST** -- authoritative, pre-analyzed. Use this as your primary source for identifying topic boundaries and importance.
+2. **RAW EXCERPTS** (optional) -- the opening of the original material, head-truncated and possibly incomplete. Use it only to recover exact tokens the digest may have smoothed away (formula names, symbols, thresholds, acronyms, variable patterns) so `anchor_terms` stay discriminative.
+
+If the digest and excerpts conflict on structure, prefer the digest. If the excerpts have a sharper symbol or threshold for an anchor, prefer the excerpts.
 
 {source_text}
