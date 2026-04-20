@@ -68,6 +68,8 @@ export default function EditorPage() {
   const [lastFit, setLastFit] = useState<FitResult | null>(null)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(loadHiddenIds)
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
+  const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
+  const [draft, setDraft] = useState<{ title: string; content: string } | null>(null)
   const [exporting, setExporting] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -93,6 +95,27 @@ export default function EditorPage() {
       setImportanceThreshold(0)
     }
   }, [targetPages, fitMode])
+
+  // Debounced commit of in-progress block edits into project.blocks.
+  // Keeping a separate draft avoids re-fitting the A4 preview on every keystroke.
+  // content_short / content_ultra_short are nulled so the density engine falls
+  // back to the edited full content instead of showing a stale compressed variant.
+  useEffect(() => {
+    if (!editingBlockId || !draft) return
+    const id = editingBlockId
+    const { title, content } = draft
+    const t = window.setTimeout(() => {
+      setProject((p) => ({
+        ...p,
+        blocks: p.blocks.map((b) =>
+          b.id === id
+            ? { ...b, title, content, content_short: undefined, content_ultra_short: undefined }
+            : b,
+        ),
+      }))
+    }, 200)
+    return () => window.clearTimeout(t)
+  }, [editingBlockId, draft])
 
   // Scroll sidebar to the double-clicked block. rAF ensures the matching
   // BlockCard has actually committed to the DOM (new selection may trigger
@@ -261,6 +284,35 @@ export default function EditorPage() {
     }))
   }
 
+  function startEditBlock(id: string) {
+    const block = project.blocks.find((b) => b.id === id)
+    if (!block) return
+    setEditingBlockId(id)
+    setDraft({ title: block.title, content: block.content })
+  }
+
+  function updateDraft(patch: Partial<{ title: string; content: string }>) {
+    setDraft((prev) => (prev ? { ...prev, ...patch } : prev))
+  }
+
+  function endEditBlock() {
+    // Flush synchronously so the final keystroke can't be dropped by the 200ms debounce.
+    if (editingBlockId && draft) {
+      const id = editingBlockId
+      const { title, content } = draft
+      setProject((p) => ({
+        ...p,
+        blocks: p.blocks.map((b) =>
+          b.id === id
+            ? { ...b, title, content, content_short: undefined, content_ultra_short: undefined }
+            : b,
+        ),
+      }))
+    }
+    setEditingBlockId(null)
+    setDraft(null)
+  }
+
   function handleInsertImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -412,11 +464,16 @@ ${stylesheets}
             blocks={project.blocks}
             hiddenIds={hiddenIds}
             selectedBlockId={selectedBlockId}
+            editingBlockId={editingBlockId}
+            draft={draft}
             onMove={moveBlock}
             onDelete={deleteBlock}
             onRestore={restoreBlock}
             onToggleLock={toggleMustKeep}
             onSetImageWidth={setImageWidth}
+            onStartEdit={startEditBlock}
+            onUpdateDraft={updateDraft}
+            onEndEdit={endEditBlock}
           />
         </div>
         <PagePreview
