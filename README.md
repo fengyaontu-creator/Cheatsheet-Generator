@@ -1,53 +1,54 @@
 # Cheatsheet
 
-A web app for turning lecture notes into print-ready exam cheatsheets.
+A web app for turning lecture notes and course materials into print-ready exam cheatsheets.
 
-Cheatsheet is a small full-stack project built for exam revision. Instead of producing long prose summaries, it extracts structured study blocks from raw material, lets you tune density and layout in the browser, and helps you export a compact revision sheet.
+Cheatsheet is a small full-stack project built for exam revision. Instead of producing long prose summaries, it extracts structured study blocks from raw material with an LLM, lets you tune density and layout in the browser, and exports a compact A4 revision sheet as PDF.
+
+The product principle is **controlled-layout AI**: the LLM outputs structured content only, the program controls layout, and users tune parameters instead of re-prompting.
 
 ## What It Does
 
-- Paste lecture notes, textbook excerpts, or markdown into the create page
-- Use an LLM to extract structured blocks such as definitions, formulas, pitfalls, and procedures
-- Open the generated result in an editor with density and layout controls
-- Hide, restore, reorder, and lock blocks while previewing the final sheet live
-- Export list-mode cheatsheets through the backend as PDF
-- Fall back to `.tex` export if no local LaTeX compiler is available
-- Print or save the mindmap view from the browser
+- Paste text or upload documents (PDF, Word, PowerPoint, Excel, HTML, CSV, Markdown, plain text) on the create page
+- Optionally attach supplementary images as extra context
+- Add optional focus instructions (e.g. exam scope, which topics to emphasize)
+- A 4-stage LLM pipeline extracts topic structure and per-topic study blocks (definitions, formulas, comparisons, pitfalls, procedures, exam tips, examples)
+- Open the generated project in an editor with density, font, column, and layout controls
+- Toggle between **List** mode (linear multi-column) and **Mindmap** mode (hierarchical tree) — both share the same block schema
+- Hide, restore, reorder, and lock blocks; insert / resize / reorder user images
+- Double-click any block in the preview to locate it in the sidebar
+- Editor state persists in `sessionStorage` across reloads
+- Export either mode to PDF through a headless-browser render on the backend
 
 ## Product Flow
 
-1. Paste source material on the create page
-2. Optionally add focus instructions for the exam
-3. Backend extracts topics and per-topic outline blocks with an LLM
+1. Paste or upload source material on the create page
+2. Optionally add focus instructions and supplementary images
+3. Backend runs a 4-stage LLM pipeline:
+   1. **Comprehend** — evidence digest of the source
+   2. **Topics** — topic skeleton with anchor terms
+   3. **Outline** — per-topic hierarchical blocks (runs per-topic in parallel)
+   4. **Compress** — generates `content_short` and `content_ultra_short` variants
 4. Frontend opens the generated project in the editor
-5. Adjust density, page target, block visibility, and layout settings
-6. Export the list layout or print the mindmap layout
-
-## Current Behavior
-
-- `List` mode: uses the backend `/api/export/latex` route for export
-- `Mindmap` mode: uses browser print or "Save as PDF" instead of backend PDF generation
-- Export fallback: if `tectonic` or `pdflatex` is unavailable, the backend returns a `.tex` file instead of a PDF
-- Extraction warnings: if topic extraction is trimmed or some topic passes fail, the editor shows warnings instead of silently hiding that state
+5. Adjust density, page target, block visibility, and layout
+6. Export the chosen layout as PDF
 
 ## Stack
 
 ### Frontend
 
-- React
-- TypeScript
+- React + TypeScript
 - Vite
 - React Router
-- KaTeX
-- d3-hierarchy
+- KaTeX (math rendering)
+- d3-hierarchy (mindmap layout)
 
 ### Backend
 
-- FastAPI
-- Pydantic
-- Jinja2
-- OpenAI SDK
-- OpenRouter API
+- FastAPI + Pydantic
+- OpenAI SDK pointing at OpenRouter
+- markitdown (multi-format document parsing)
+- Playwright (headless Chromium, PDF export)
+- Per-stage content-hash cache under `app/.cache/extractor/` (prompt changes auto-invalidate)
 
 ## Local Setup
 
@@ -59,8 +60,11 @@ From the repository root:
 cd cheatsheet-app/backend
 copy .env.example .env
 python -m pip install -r requirements.txt
+python -m playwright install chromium
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+On Windows PowerShell, `./run.ps1` wraps the install + uvicorn steps.
 
 Required environment variables:
 
@@ -69,9 +73,9 @@ OPENROUTER_API_KEY=your_key_here
 OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
 ```
 
-### 2. Frontend
+Optional per-stage model overrides (`OPENROUTER_MODEL_STAGE0` … `STAGE3`) are documented in `.env.example`.
 
-From the repository root:
+### 2. Frontend
 
 ```powershell
 cd cheatsheet-app/frontend
@@ -90,94 +94,105 @@ VITE_API_URL=http://localhost:8000
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:8000`
 
-## Export Notes
+## Export
 
-The backend export path is designed for list-mode cheatsheets.
+Both List and Mindmap modes export through the backend. The frontend collects its rendered preview pages and the stylesheet, wraps them as a self-contained HTML document, and posts it to `/api/export/pdf`. The backend renders with headless Chromium via Playwright using the same CSS the preview uses, so what you see is what you print.
 
-It validates the export payload, escapes normal text before it enters LaTeX, blocks a set of risky LaTeX commands, and applies a compile timeout.
-
-The backend tries:
-
-1. `tectonic`
-2. `pdflatex`
-
-If both fail or are missing, it returns the generated `.tex` source.
+PDF rendering runs synchronously inside a thread pool to avoid blocking the asyncio event loop.
 
 ## API Overview
 
+### `POST /api/ingest`
+
+Multipart upload. Accepts any combination of documents (PDF, DOCX, PPT, Excel, HTML, CSV, JSON, XML, plain text) and images. Documents are concatenated into source text via markitdown; images are collected for future multimodal passes.
+
+Form fields:
+
+- `files` — one or more uploaded files
+- `user_focus` — optional focus text
+- `language` — `en` | `zh` | `mixed`
+
+Returns the cheatsheet project JSON: `document_title`, `exam_profile`, `blocks`, `pages`, `warnings`.
+
 ### `POST /api/ingest/text`
 
-Converts raw study material into a structured cheatsheet project.
-
-Request body:
+JSON body for pasted text:
 
 - `source_text`
 - `user_focus`
+- `language`
 
-Response includes:
+Same response shape as `/api/ingest`.
 
-- `document_title`
-- `exam_profile`
-- `blocks`
-- `pages`
-- `warnings`
+### `POST /api/export/pdf`
 
-### `POST /api/export/latex`
+JSON body:
 
-Exports a list-mode cheatsheet document.
+- `html` — self-contained HTML of the pages to render
 
-Request body includes:
-
-- `document_title`
-- `blocks`
-- `cols`
-- `margin_mm`
-
-Returns:
-
-- `application/pdf` when compilation succeeds
-- `text/plain` with TeX content when export falls back
+Returns `application/pdf`.
 
 ## Project Structure
 
 ```text
 .
-|- .claude/
 |- cheatsheet-app/
 |  |- backend/
 |  |  |- app/
-|  |  |  |- api/routes/
-|  |  |  |- prompts/
-|  |  |  |- renderer/
-|  |  |  |- schemas/
-|  |  |  `- services/
+|  |  |  |- api/routes/        # ingest.py, export.py
+|  |  |  |- prompts/           # system.md + 4 stage prompts
+|  |  |  |- schemas/           # blocks, project
+|  |  |  |- services/          # extractor, llm_client, file_reader, outline_parser
+|  |  |  `- main.py
 |  |  |- sample/
-|  |  `- requirements.txt
+|  |  |- requirements.txt
+|  |  `- run.ps1
 |  |- frontend/
 |  |  |- src/
-|  |  |  |- components/
-|  |  |  |- pages/
-|  |  |  |- services/
+|  |  |  |- components/editor/ # BlockSidebar, BlockCard, ControlPanel, PagePreview, ListPreview, MindmapPreview
+|  |  |  |- pages/             # HomePage, CreatePage, EditorPage
+|  |  |  |- layout/            # pagination engine
+|  |  |  |- services/          # api.ts
+|  |  |  |- store/
+|  |  |  |- styles/
 |  |  |  |- types/
 |  |  |  `- utils/
 |  |  `- package.json
 |  `- start.md
-|- .gitignore
-`- README.md
+|- README.md
 ```
 
 ## Known Limits
 
-- Extraction quality still depends heavily on source quality and prompt behavior
-- There is no persistence layer yet
-- Mindmap export still uses browser print instead of backend PDF generation
-- The list editor is more mature than the mindmap editor
-- There is not yet an automated backend test suite
+- `/api/ingest` blocks until the full 4-stage pipeline finishes — no job / progress API yet
+- No streaming LLM responses
+- No persistence beyond `sessionStorage` — no user accounts, no saved projects
+- No block text editing yet — users can hide / reorder / lock blocks and resize / reorder images, but cannot edit titles or content
+- Pagination is topic-blind — subtrees and topic groups can split across pages with only a "(cont.)" badge
+- No automated backend test suite yet
+- Deployment story undecided
 
-## Good First Next Steps
+## Roadmap
 
-- Add regression tests for export payload validation and extractor warnings
-- Decide whether mindmap export should also move to the backend
-- Improve block editing beyond hide, move, and lock interactions
-- Add project save and load support
-- Refine README screenshots or demo media for GitHub presentation
+Three parallel tracks:
+
+**1. Core-value UX arc** (sequence matters; each phase unblocks the next)
+
+1. Generation job status framework — in-memory job store + polling endpoints (`POST /api/ingest/jobs/{text,files}` + `GET /api/ingest/jobs/{id}`); CreatePage stays on the submit screen and polls to completion
+2. Generation overlay — stage + per-topic progress card with cancel / retry
+3. 10-second "whip" overlay — pure UI flourish after long waits, no pipeline coupling
+4. Block text editing — title + content, double-click to edit, 200 ms debounce back into the project (the last missing piece of the "fix without re-prompting" value prop)
+
+**2. Topic-grouping-aware layout**
+
+Pagination currently ignores block identity. Extend it to receive topic group hints so List mode inserts topic-header breaks and Mindmap mode keeps subtrees together when they fit.
+
+**3. Deployment**
+
+Target shape: backend behind nginx reverse proxy, frontend served as static assets, Playwright concurrency capped for single-core VPS. Keep path / port / DB coupling behind env vars so future migration to dedicated instances or managed services is just env swaps.
+
+**Smaller ongoing work**
+
+- Stage 2 Markdown → JSON prompt mode (retire the outline parser)
+- Prompt retrieval tightening (dedup / stoplist / IDF) — gated on real-run observations
+- Regression tests for export payload validation and extractor warnings
