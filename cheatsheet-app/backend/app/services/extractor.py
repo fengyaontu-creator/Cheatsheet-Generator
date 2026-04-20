@@ -7,7 +7,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.schemas.blocks import (
     Block,
@@ -96,6 +96,7 @@ async def extract_project(
     language: str = "en",
     debug: bool = False,
     images: list[bytes] | None = None,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> CheatsheetProject:
     client = LLMClient()
     focus = user_focus.strip() or "none"
@@ -103,7 +104,15 @@ async def extract_project(
     stage_models = _resolve_stage_models(client.default_model)
     warnings: list[str] = []
 
+    def _emit(event: dict[str, Any]) -> None:
+        if on_progress is not None:
+            try:
+                on_progress(event)
+            except Exception:
+                logger.warning("on_progress callback raised", exc_info=True)
+
     # Stage 0: comprehension (images only used here -- digest carries info forward)
+    _emit({"stage": "comprehend"})
     comprehension = await _run_comprehension(
         client, source_text, focus, lang_instruction, stage_models.comprehend, images
     )
@@ -113,6 +122,7 @@ async def extract_project(
         warnings.append(f"[debug] Stage 0 model: {stage_models.comprehend}")
 
     # Stage 1: topic extraction (digest authoritative + truncated raw for exact tokens)
+    _emit({"stage": "topics"})
     topic_result = await _run_topic_extraction(
         client, comprehension.summary, source_text, focus, lang_instruction, stage_models.topics
     )
@@ -130,6 +140,7 @@ async def extract_project(
     topics = topic_result.topics[:MAX_TOPICS]
 
     # Stage 2: outline extraction per topic (digest + per-topic raw excerpts)
+    _emit({"stage": "outline", "topics_total": len(topics), "topics_done": 0})
     outline_result = await _run_outline_extraction(
         client,
         comprehension.summary,
@@ -138,6 +149,7 @@ async def extract_project(
         topics,
         lang_instruction,
         stage_models.outlines,
+        on_progress=_emit,
     )
     if debug:
         block_count = len(outline_result.blocks)
@@ -146,6 +158,7 @@ async def extract_project(
         warnings.append(f"[debug] Stage 2 model: {stage_models.outlines}")
 
     # Stage 3: density compression
+    _emit({"stage": "compress"})
     blocks = await _run_compression(
         client,
         outline_result.blocks,
@@ -332,6 +345,7 @@ async def _run_outline_extraction(
     topics: list[dict[str, Any]],
     lang_instruction: str,
     model: str,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> OutlineResult:
     # Build per-topic source: full digest + topic-specific raw excerpts
     topic_sources: dict[str, str] = {}
@@ -341,22 +355,36 @@ async def _run_outline_extraction(
         topic_sources[t["id"]] = _build_topic_source(summary, excerpts)
 
     loop = asyncio.get_running_loop()
+    topics_total = len(topics)
+    completed = [0]
+
     with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(topics))) as pool:
-        futures = [
-            loop.run_in_executor(
-                pool,
-                _extract_outline_for_topic,
-                client,
-                topic_sources[t["id"]],
-                user_focus,
-                t,
-                topics,
-                lang_instruction,
-                model,
-            )
-            for t in topics
-        ]
-        results = await asyncio.gather(*futures, return_exceptions=True)
+
+        async def _run_one(topic: dict[str, Any]):
+            try:
+                return await loop.run_in_executor(
+                    pool,
+                    _extract_outline_for_topic,
+                    client,
+                    topic_sources[topic["id"]],
+                    user_focus,
+                    topic,
+                    topics,
+                    lang_instruction,
+                    model,
+                )
+            finally:
+                completed[0] += 1
+                if on_progress is not None:
+                    on_progress({
+                        "stage": "outline",
+                        "topics_total": topics_total,
+                        "topics_done": completed[0],
+                    })
+
+        results = await asyncio.gather(
+            *[_run_one(t) for t in topics], return_exceptions=True
+        )
 
     all_blocks: list[Block] = []
     failed_topics: list[str] = []
@@ -452,7 +480,15 @@ async def _run_outline_extraction(
                 )
 
     if not any(b.type != BlockType.topic for b in all_blocks):
-        raise RuntimeError("All topic outline extraction passes failed.")
+        detail_parts = []
+        for t in topics:
+            raw = raw_outputs.get(t["id"], "unknown")
+            snippet = str(raw).replace("\n", " ")[:300]
+            detail_parts.append(f"[{t['title']}] {snippet}")
+        detail = " || ".join(detail_parts)[:2000]
+        raise RuntimeError(
+            f"All topic outline extraction passes failed. Per-topic: {detail}"
+        )
 
     # Replace per-block "empty content body" noise with a single aggregated line.
     # The detailed per-block warnings stay in raw_outputs for debug inspection,

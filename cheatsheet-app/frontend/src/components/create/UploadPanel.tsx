@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ingestFiles, ingestText } from '../../services/api'
+import { useGenerationJob } from '../../hooks/useGenerationJob'
+import GenerationOverlay from './GenerationOverlay'
 
 type Mode = 'files' | 'text'
 type Language = 'en' | 'zh' | 'mixed'
@@ -41,36 +42,37 @@ export default function UploadPanel() {
   const [sourceText, setSourceText] = useState('')
   const [userFocus, setUserFocus] = useState('')
   const [files, setFiles] = useState<File[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [validationError, setValidationError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const job = useGenerationJob()
+
+  const loading = job.status === 'pending' || job.status === 'running'
+
+  useEffect(() => {
+    if (job.status === 'completed' && job.project) {
+      sessionStorage.removeItem('cheatsheet_editor_project')
+      sessionStorage.removeItem('cheatsheet_editor_hidden')
+      navigate('/editor', { state: { project: job.project } })
+    }
+  }, [job.status, job.project, navigate])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (mode === 'files' && files.length === 0) {
-      setError('Please select at least one file.')
+      setValidationError('Please select at least one file.')
       return
     }
     if (mode === 'text' && !sourceText.trim()) {
-      setError('Source text is empty.')
+      setValidationError('Source text is empty.')
       return
     }
-    setLoading(true)
-    setError(null)
-    try {
-      const project =
-        mode === 'files'
-          ? await ingestFiles(files, userFocus, language)
-          : await ingestText(sourceText, userFocus, language)
-      // Fresh project — clear any stale editor state from previous session
-      sessionStorage.removeItem('cheatsheet_editor_project')
-      sessionStorage.removeItem('cheatsheet_editor_hidden')
-      navigate('/editor', { state: { project } })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLoading(false)
-    }
+    setValidationError(null)
+    await job.start({
+      files: mode === 'files' ? files : undefined,
+      text: mode === 'text' ? sourceText : undefined,
+      userFocus,
+      language,
+    })
   }
 
   function addFiles(incoming: FileList | File[]) {
@@ -227,13 +229,22 @@ export default function UploadPanel() {
         />
       </div>
 
-      {error && <div style={styles.error}>{error}</div>}
+      {validationError && <div style={styles.error}>{validationError}</div>}
 
       <div style={styles.actions}>
         <button type="submit" style={styles.submit} disabled={loading}>
-          {loading ? 'Extracting… (this takes ~20-40s)' : 'Generate cheatsheet →'}
+          {loading ? 'Generating…' : 'Generate cheatsheet →'}
         </button>
       </div>
+
+      <GenerationOverlay
+        status={job.status}
+        stage={job.stage}
+        topicsTotal={job.topicsTotal}
+        topicsDone={job.topicsDone}
+        error={job.error}
+        onDismiss={job.reset}
+      />
     </form>
   )
 }
