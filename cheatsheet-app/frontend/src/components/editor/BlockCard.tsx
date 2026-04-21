@@ -1,5 +1,6 @@
 import React from 'react'
 import type { Block, BlockDraft, BlockType } from '../../types/block'
+import { renderInline } from '../../utils/inlineMarkdown'
 
 interface Props {
   block: Block
@@ -170,7 +171,7 @@ export default function BlockCard({
         />
       ) : (
         <div style={styles.preview} onDoubleClick={handleDoubleClick}>
-          {block.content_short ?? block.content}
+          {renderInline(block.content_short ?? block.content)}
         </div>
       ))}
       {showLatexField && (

@@ -1,6 +1,7 @@
 import React from 'react'
 import type { Block, ListLayout } from '../../types/block'
 import { pickVersion } from '../../utils/density'
+import { renderInline } from '../../utils/inlineMarkdown'
 import Katex from '../ui/Katex'
 
 interface Props {
@@ -118,7 +119,7 @@ export function BlockRender({
           <Katex latex={block.latex} />
         </div>
       ) : (
-        <div style={styles.blockBody}>{text}</div>
+        <div style={styles.blockBody}>{renderInline(text)}</div>
       )}
     </div>
   )
