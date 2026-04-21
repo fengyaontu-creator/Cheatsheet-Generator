@@ -69,6 +69,17 @@ export function BlockRender({
       }
     : undefined
 
+  if (block.type === 'topic') {
+    return (
+      <div
+        style={styles.topicHeader}
+        data-block-id={block.id}
+        onDoubleClick={handleDoubleClick}
+      >
+        {block.title}
+      </div>
+    )
+  }
   if (block.type === 'image' && block.image_data) {
     const maxW = IMAGE_MAX_WIDTH[block.image_width ?? 'full'] ?? '100%'
     const ar = block.image_natural_width && block.image_natural_height
@@ -140,6 +151,17 @@ const styles: Record<string, React.CSSProperties> = {
   block: {
     breakInside: 'avoid',
     marginBottom: '0.5em',
+  },
+  topicHeader: {
+    breakInside: 'avoid',
+    fontSize: '1.1em',
+    fontWeight: 700,
+    color: '#1f2328',
+    marginTop: '0.35em',
+    marginBottom: '0.25em',
+    paddingBottom: '0.1em',
+    borderBottom: '1px solid #d0d7de',
+    letterSpacing: '0.01em',
   },
   blockTitle: {
     fontWeight: 700,
