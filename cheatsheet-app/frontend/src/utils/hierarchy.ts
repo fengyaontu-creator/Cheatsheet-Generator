@@ -59,16 +59,6 @@ export function collectDescendantIds(blocks: Block[], startId: string): string[]
   return collected
 }
 
-export function orderBlocksByIds(blocks: Block[], ids: string[]): Block[] {
-  const byId = new Map(blocks.map((block) => [block.id, block]))
-  const ordered: Block[] = []
-  for (const id of ids) {
-    const block = byId.get(id)
-    if (block) ordered.push(block)
-  }
-  return ordered
-}
-
 /* ── Mindmap atoms: fine-grained measurement units ── */
 
 export interface MindmapAtom {
@@ -136,6 +126,86 @@ function flattenChildren(
  * fit fall back to the per-atom flag from flattenTreeToAtoms (which only
  * binds a parent to its first child), and the paginator force-fits from there.
  */
+/**
+ * List-mode counterpart: given a DFS pre-ordered Block[] with parent_id
+ * hierarchy, mark each topic's subtree as keep-with-next when the whole
+ * subtree fits in capacity. Like the mindmap variant, subtrees that
+ * overflow fall back to the floor flag (topic-to-first-child) and the
+ * paginator's force-fit path.
+ */
+export function computeBlockSubtreeKeepWithNext(
+  blocks: Block[],
+  heights: number[],
+  margins: number[],
+  capacity: number,
+): boolean[] {
+  const kwn: boolean[] = new Array(blocks.length).fill(false)
+  if (blocks.length === 0) return kwn
+
+  // Floor: bind every topic to the first following block (its first child
+  // under the DFS pre-order invariant, or the next sibling if childless).
+  for (let i = 0; i < blocks.length - 1; i++) {
+    if (blocks[i].type === 'topic') kwn[i] = true
+  }
+
+  const prefix: number[] = [0]
+  for (const h of heights) prefix.push(prefix[prefix.length - 1] + h)
+
+  const indexById = new Map(blocks.map((b, i) => [b.id, i]))
+  const childIndices = new Map<number, number[]>()
+  for (let i = 0; i < blocks.length; i++) {
+    const parentIdx = blocks[i].parent_id ? indexById.get(blocks[i].parent_id!) : undefined
+    if (parentIdx === undefined) continue
+    const siblings = childIndices.get(parentIdx) ?? []
+    siblings.push(i)
+    childIndices.set(parentIdx, siblings)
+  }
+
+  const sizeCache = new Map<number, number>()
+  function subtreeSize(i: number): number {
+    const cached = sizeCache.get(i)
+    if (cached !== undefined) return cached
+    let n = 1
+    for (const c of childIndices.get(i) ?? []) n += subtreeSize(c)
+    sizeCache.set(i, n)
+    return n
+  }
+
+  for (let i = 0; i < blocks.length; i++) {
+    if (blocks[i].type !== 'topic') continue
+    const size = subtreeSize(i)
+    if (size <= 1) continue
+    const end = i + size
+    if (end > blocks.length) continue
+    const subtreeHeight = prefix[end] - prefix[i] - margins[end - 1]
+    if (subtreeHeight <= capacity) {
+      for (let j = i; j < end - 1; j++) kwn[j] = true
+    }
+  }
+
+  return kwn
+}
+
+/**
+ * Remove topic blocks whose entire subtree has been dropped (e.g. all
+ * children hidden or filtered out). Blocks must be in DFS pre-order.
+ */
+export function dropOrphanTopics(blocks: Block[]): Block[] {
+  if (blocks.length === 0) return blocks
+  const byId = new Map(blocks.map((b) => [b.id, b]))
+  const hasSurvivingDescendant = new Set<string>()
+  for (const block of blocks) {
+    if (block.type === 'topic') continue
+    let cur = block.parent_id ? byId.get(block.parent_id) : undefined
+    while (cur) {
+      if (hasSurvivingDescendant.has(cur.id)) break
+      hasSurvivingDescendant.add(cur.id)
+      cur = cur.parent_id ? byId.get(cur.parent_id) : undefined
+    }
+  }
+  return blocks.filter((b) => b.type !== 'topic' || hasSurvivingDescendant.has(b.id))
+}
+
 export function computeSubtreeKeepWithNext(
   atoms: MindmapAtom[],
   heights: number[],

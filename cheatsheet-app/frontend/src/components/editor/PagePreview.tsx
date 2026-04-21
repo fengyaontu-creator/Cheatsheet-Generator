@@ -10,9 +10,10 @@ import {
 import { filterByImportance } from '../../utils/filterByImportance'
 import {
   buildTree,
+  computeBlockSubtreeKeepWithNext,
   computeSubtreeKeepWithNext,
+  dropOrphanTopics,
   flattenTreeToAtoms,
-  orderBlocksByIds,
   type MindmapAtom,
 } from '../../utils/hierarchy'
 import ListPreview, { BlockRender } from './ListPreview'
@@ -54,17 +55,22 @@ export default function PagePreview({
     () => filterByImportance(blocks, importanceThreshold),
     [blocks, importanceThreshold],
   )
+
+  // List-mode rendered items: blocks in DFS pre-order with orphan topics
+  // (whose whole subtree was hidden or filtered out) removed. Topic
+  // headers are included as first-class items.
   const listBlocks = useMemo(
-    () => orderBlocksByIds(filteredBlocks, page.block_ids),
-    [filteredBlocks, page.block_ids],
+    () => (page.mode === 'list' ? dropOrphanTopics(filteredBlocks) : []),
+    [page.mode, filteredBlocks],
   )
 
-  // All content blocks without importance filtering — used for measurement
-  // in list mode so the binary search can evaluate any threshold in one pass
-  const allContentBlocks = useMemo(() => {
-    if (page.mode !== 'list') return []
-    return orderBlocksByIds(blocks, page.block_ids).filter((b) => b.type !== 'topic')
-  }, [page.mode, blocks, page.block_ids])
+  // All list-mode items without importance filtering — used for the
+  // measurement hidden container so the auto-fit binary search can slice
+  // any threshold from the same height array.
+  const allListBlocks = useMemo(
+    () => (page.mode === 'list' ? dropOrphanTopics(blocks) : []),
+    [page.mode, blocks],
+  )
   const keptCount = filteredBlocks.filter((b) => b.type !== 'topic').length
   const totalContent = blocks.filter((b) => b.type !== 'topic').length
 
@@ -107,14 +113,9 @@ export default function PagePreview({
     [page.mode, topicNodes],
   )
 
-  const contentBlocks = useMemo(() => {
-    if (page.mode !== 'list') return []
-    return listBlocks.filter((b) => b.type !== 'topic')
-  }, [page.mode, listBlocks])
-
   // For measurement: count of items in the hidden container
   const measureItemCount =
-    page.mode === 'mindmap' ? mindmapAtoms.length : allContentBlocks.length
+    page.mode === 'mindmap' ? mindmapAtoms.length : allListBlocks.length
 
   const titleRef = useRef<HTMLDivElement>(null)
   const itemsRef = useRef<HTMLDivElement>(null)
@@ -129,8 +130,8 @@ export default function PagePreview({
     () =>
       page.mode === 'mindmap'
         ? mindmapAtoms.map((a) => a.nodeId).join('|')
-        : allContentBlocks.map((block) => block.id).join('|'),
-    [page.mode, mindmapAtoms, allContentBlocks],
+        : allListBlocks.map((block) => block.id).join('|'),
+    [page.mode, mindmapAtoms, allListBlocks],
   )
 
   useLayoutEffect(() => {
@@ -179,27 +180,51 @@ export default function PagePreview({
     let keepWithNextArr: boolean[] | undefined
 
     if (page.mode === 'list') {
-      // List mode: measurement container has allContentBlocks.
-      // Binary search for auto-fit threshold, then paginate the filtered subset.
+      // List mode: measurement container has allListBlocks (topics + content).
+      // Binary search for auto-fit threshold uses keep-ancestors + orphan-drop
+      // semantics so topics follow their children the same way the render does.
       if (fitMode === 'auto') {
+        const pickKeptIndices = (threshold: number) => {
+          const kept = dropOrphanTopics(filterByImportance(allListBlocks, threshold))
+          const keptIds = new Set(kept.map((b) => b.id))
+          const indices: number[] = []
+          for (let i = 0; i < allListBlocks.length; i++) {
+            if (keptIds.has(allListBlocks[i].id)) indices.push(i)
+          }
+          return indices
+        }
+        const computeKwn = (keptIndices: number[]) => {
+          const kb = keptIndices.map((i) => allListBlocks[i])
+          const kh = keptIndices.map((i) => allHeights[i])
+          const km = keptIndices.map((i) => allMargins[i])
+          return computeBlockSubtreeKeepWithNext(kb, kh, km, pageContentHeightMm)
+        }
         autoFitThreshold = findAutoFitThreshold(
-          allContentBlocks,
+          allListBlocks,
           allHeights,
           allMargins,
           columns,
           firstPageCap,
           pageContentHeightMm,
           targetPages,
+          pickKeptIndices,
+          computeKwn,
         )
       }
 
-      // Map current contentBlocks to allContentBlocks indices
-      const idToIdx = new Map(allContentBlocks.map((b, i) => [b.id, i]))
-      const displayIndices = contentBlocks
+      // Map currently-displayed listBlocks to allListBlocks indices
+      const idToIdx = new Map(allListBlocks.map((b, i) => [b.id, i]))
+      const displayIndices = listBlocks
         .map((b) => idToIdx.get(b.id))
         .filter((i): i is number => i != null)
       heights = displayIndices.map((i) => allHeights[i])
       margins = displayIndices.map((i) => allMargins[i])
+      keepWithNextArr = computeBlockSubtreeKeepWithNext(
+        listBlocks,
+        heights,
+        margins,
+        pageContentHeightMm,
+      )
     } else {
       // Mindmap mode: measurement container has flattened atoms.
       heights = allHeights
@@ -304,10 +329,10 @@ export default function PagePreview({
 
     return pageColumns.map((cols) =>
       cols.map((indices) =>
-        indices.filter((i) => i < contentBlocks.length).map((i) => contentBlocks[i]),
+        indices.filter((i) => i < listBlocks.length).map((i) => listBlocks[i]),
       ),
     )
-  }, [pageColumns, page.mode, mindmapAtoms, contentBlocks])
+  }, [pageColumns, page.mode, mindmapAtoms, listBlocks])
 
   const measureFontStyle: React.CSSProperties = {
     fontSize: `${fontSize}pt`,
@@ -365,7 +390,7 @@ export default function PagePreview({
                   />
                 </div>
               ))
-            : allContentBlocks.map((block) => (
+            : allListBlocks.map((block) => (
                 <div key={block.id}>
                   <BlockRender block={block} densityLevel={densityLevel} />
                 </div>

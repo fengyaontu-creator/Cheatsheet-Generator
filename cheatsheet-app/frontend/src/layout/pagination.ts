@@ -147,6 +147,11 @@ export function findBestPartition(
 /**
  * Binary-search for the minimum importance threshold that makes content
  * fit within targetPages. Returns 0 if everything already fits.
+ *
+ * Callers can override the default strict filter via `pickKeptIndices`
+ * (e.g. list mode needs keep-ancestors semantics so topic headers survive
+ * with their surviving children) and provide a `computeKeepWithNext`
+ * hook so subtree-cohesion hints apply during the search.
  */
 export function findAutoFitThreshold(
   allBlocks: Block[],
@@ -156,14 +161,19 @@ export function findAutoFitThreshold(
   firstPageCap: number,
   followingPageCap: number,
   targetPages: number,
+  pickKeptIndices?: (threshold: number) => number[],
+  computeKeepWithNext?: (keptIndices: number[]) => boolean[] | undefined,
 ): number {
-  // Check if everything fits without filtering
+  const allIndices = allBlocks.map((_, i) => i)
+
+  const fullKwn = computeKeepWithNext?.(allIndices)
   const fullAssign = paginateMeasuredItems(
     allHeights,
     allMargins,
     columns,
     firstPageCap,
     followingPageCap,
+    fullKwn,
   )
   if (fullAssign.length <= targetPages) return 0
 
@@ -183,12 +193,20 @@ export function findAutoFitThreshold(
     const mid = (lo + hi) >> 1
     const t = thresholds[mid]
 
-    const kept = allBlocks
-      .map((_, i) => i)
-      .filter((i) => allBlocks[i].must_keep || allBlocks[i].importance >= t)
+    const kept = pickKeptIndices
+      ? pickKeptIndices(t)
+      : allIndices.filter((i) => allBlocks[i].must_keep || allBlocks[i].importance >= t)
     const keptH = kept.map((i) => allHeights[i])
     const keptM = kept.map((i) => allMargins[i])
-    const assign = paginateMeasuredItems(keptH, keptM, columns, firstPageCap, followingPageCap)
+    const keptKwn = computeKeepWithNext?.(kept)
+    const assign = paginateMeasuredItems(
+      keptH,
+      keptM,
+      columns,
+      firstPageCap,
+      followingPageCap,
+      keptKwn,
+    )
 
     if (assign.length <= targetPages) {
       best = mid
