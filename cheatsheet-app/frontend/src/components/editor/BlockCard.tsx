@@ -1,5 +1,5 @@
 import React from 'react'
-import type { Block } from '../../types/block'
+import type { Block, BlockDraft, BlockType } from '../../types/block'
 
 interface Props {
   block: Block
@@ -7,13 +7,13 @@ interface Props {
   total: number
   isSelected?: boolean
   isEditing?: boolean
-  draft?: { title: string; content: string } | null
+  draft?: BlockDraft | null
   onMove: (id: string, dir: -1 | 1) => void
   onDelete: (id: string) => void
   onToggleLock: (id: string) => void
   onSetImageWidth?: (id: string, width: 'small' | 'medium' | 'full') => void
   onStartEdit?: (id: string) => void
-  onUpdateDraft?: (patch: Partial<{ title: string; content: string }>) => void
+  onUpdateDraft?: (patch: Partial<BlockDraft>) => void
   onEndEdit?: () => void
 }
 
@@ -21,6 +21,18 @@ const IMAGE_SIZE_OPTIONS: Array<{ value: 'small' | 'medium' | 'full'; label: str
   { value: 'small', label: 'S' },
   { value: 'medium', label: 'M' },
   { value: 'full', label: 'L' },
+]
+
+const TYPE_OPTIONS: BlockType[] = [
+  'topic',
+  'definition',
+  'formula',
+  'comparison',
+  'pitfall',
+  'procedure',
+  'exam_tip',
+  'example',
+  'image',
 ]
 
 const typeColors: Record<Block['type'], string> = {
@@ -50,15 +62,17 @@ export default function BlockCard({
   onUpdateDraft,
   onEndEdit,
 }: Props) {
-  const color = typeColors[block.type]
   const isImage = block.type === 'image'
-  const editable = isEditing && !isImage && draft !== null
+  const editable = isEditing && draft !== null
+  const displayType = editable ? draft!.type : block.type
+  const color = typeColors[displayType]
   const cardStyle = isSelected
     ? { ...styles.card, ...styles.cardSelected }
     : editable
     ? { ...styles.card, ...styles.cardEditing }
     : styles.card
   const currentWidth = block.image_width ?? 'full'
+  const showLatexField = editable && !isImage && (displayType === 'formula' || draft!.latex.length > 0)
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Escape' && editable && onEndEdit) {
@@ -70,14 +84,14 @@ export default function BlockCard({
   function handleBlur(e: React.FocusEvent<HTMLDivElement>) {
     if (!editable || !onEndEdit) return
     const next = e.relatedTarget as Node | null
-    // Focus moving between title input and content textarea inside the card
-    // should NOT trigger exit — only focus leaving the card boundary does.
+    // Focus moving between inputs inside the card should NOT trigger exit —
+    // only focus leaving the card boundary does.
     if (next && e.currentTarget.contains(next)) return
     onEndEdit()
   }
 
   function handleDoubleClick() {
-    if (isImage || editable || !onStartEdit) return
+    if (editable || !onStartEdit) return
     onStartEdit(block.id)
   }
 
@@ -96,8 +110,38 @@ export default function BlockCard({
       onBlur={handleBlur}
     >
       <div style={styles.head}>
-        <span style={{ ...styles.typePill, background: color }}>{block.type}</span>
-        <span style={styles.importance}>★ {block.importance.toFixed(2)}</span>
+        {editable ? (
+          <select
+            value={draft!.type}
+            onChange={(e) => onUpdateDraft?.({ type: e.target.value as BlockType })}
+            style={{ ...styles.typeSelect, color }}
+          >
+            {TYPE_OPTIONS.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span style={{ ...styles.typePill, background: color }}>{block.type}</span>
+        )}
+        {editable ? (
+          <div style={styles.importanceEdit}>
+            <span style={styles.importanceLabel}>★</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={draft!.importance}
+              onChange={(e) => onUpdateDraft?.({ importance: Number(e.target.value) })}
+              style={styles.importanceSlider}
+            />
+            <span style={styles.importanceValue}>{draft!.importance.toFixed(2)}</span>
+          </div>
+        ) : (
+          <span style={styles.importance}>★ {block.importance.toFixed(2)}</span>
+        )}
       </div>
       {editable ? (
         <input
@@ -113,9 +157,10 @@ export default function BlockCard({
           {block.title}
         </div>
       )}
-      {isImage && block.image_data ? (
+      {isImage && block.image_data && (
         <img src={block.image_data} alt={block.title} style={styles.thumbPreview} />
-      ) : editable ? (
+      )}
+      {!isImage && (editable ? (
         <textarea
           value={contentValue}
           onChange={(e) => onUpdateDraft?.({ content: e.target.value })}
@@ -127,6 +172,27 @@ export default function BlockCard({
         <div style={styles.preview} onDoubleClick={handleDoubleClick}>
           {block.content_short ?? block.content}
         </div>
+      ))}
+      {showLatexField && (
+        <textarea
+          value={draft!.latex}
+          onChange={(e) => onUpdateDraft?.({ latex: e.target.value })}
+          rows={2}
+          style={styles.latexTextarea}
+          placeholder="LaTeX (optional)"
+        />
+      )}
+      {isImage && editable && (
+        <input
+          type="text"
+          value={draft!.image_caption}
+          onChange={(e) => onUpdateDraft?.({ image_caption: e.target.value })}
+          style={styles.captionInput}
+          placeholder="Image caption (optional)"
+        />
+      )}
+      {isImage && !editable && block.image_caption && (
+        <div style={styles.caption}>{block.image_caption}</div>
       )}
       {block.source_ref && <div style={styles.source}>{block.source_ref}</div>}
       {isImage && onSetImageWidth && (
@@ -221,9 +287,38 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
   },
+  typeSelect: {
+    border: '1px solid #d0d7de',
+    borderRadius: 4,
+    background: '#fff',
+    padding: '2px 4px',
+    fontSize: 11,
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    textTransform: 'lowercase',
+  },
   importance: {
     fontSize: 11,
     color: '#57606a',
+  },
+  importanceEdit: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+  },
+  importanceLabel: {
+    fontSize: 11,
+    color: '#bf8700',
+  },
+  importanceSlider: {
+    width: 80,
+    accentColor: '#bf8700',
+  },
+  importanceValue: {
+    fontSize: 11,
+    color: '#57606a',
+    minWidth: 28,
+    textAlign: 'right',
   },
   title: {
     fontWeight: 600,
@@ -265,6 +360,39 @@ const styles: Record<string, React.CSSProperties> = {
     boxSizing: 'border-box',
     fontFamily: 'inherit',
     resize: 'vertical',
+  },
+  latexTextarea: {
+    width: '100%',
+    color: '#1f2328',
+    fontSize: 11,
+    lineHeight: 1.4,
+    padding: '6px 8px',
+    marginTop: 6,
+    border: '1px solid #d0d7de',
+    borderRadius: 4,
+    background: '#f6f8fa',
+    boxSizing: 'border-box',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    resize: 'vertical',
+  },
+  captionInput: {
+    width: '100%',
+    fontSize: 11,
+    color: '#1f2328',
+    marginTop: 6,
+    padding: '4px 6px',
+    border: '1px solid #d0d7de',
+    borderRadius: 4,
+    background: '#fff',
+    boxSizing: 'border-box',
+    fontFamily: 'inherit',
+    fontStyle: 'italic',
+  },
+  caption: {
+    fontSize: 10,
+    color: '#57606a',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   thumbPreview: {
     maxWidth: '100%',
