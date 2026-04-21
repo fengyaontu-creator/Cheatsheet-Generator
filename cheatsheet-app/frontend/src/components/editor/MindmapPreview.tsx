@@ -1,6 +1,7 @@
 import React from 'react'
 import type { MindmapLayout } from '../../types/block'
 import { pickMindmapVersion } from '../../utils/density'
+import { renderInline } from '../../utils/inlineMarkdown'
 import type { MindmapAtom } from '../../utils/hierarchy'
 import Katex from '../ui/Katex'
 import { IMAGE_MAX_WIDTH } from './ListPreview'
@@ -151,7 +152,7 @@ export function MindmapAtomRender({
             <Katex latex={latex} />
           </span>
         ) : (
-          subtitle && <span style={subtitleStyle}> - {subtitle}</span>
+          subtitle && <span style={subtitleStyle}> - {renderInline(subtitle)}</span>
         )}
       </div>
     </div>
@@ -359,7 +360,7 @@ function AtomLine({
             <Katex latex={latex} />
           </span>
         ) : (
-          subtitle && <span style={subtitleStyle}> - {subtitle}</span>
+          subtitle && <span style={subtitleStyle}> - {renderInline(subtitle)}</span>
         )}
       </div>
     </div>
