@@ -10,6 +10,7 @@ import {
 import { filterByImportance } from '../../utils/filterByImportance'
 import {
   buildTree,
+  computeSubtreeKeepWithNext,
   flattenTreeToAtoms,
   orderBlocksByIds,
   type MindmapAtom,
@@ -203,7 +204,12 @@ export default function PagePreview({
       // Mindmap mode: measurement container has flattened atoms.
       heights = allHeights
       margins = allMargins
-      keepWithNextArr = mindmapAtoms.map((a) => a.keepWithNext)
+      keepWithNextArr = computeSubtreeKeepWithNext(
+        mindmapAtoms,
+        heights,
+        margins,
+        pageContentHeightMm,
+      )
 
       if (fitMode === 'auto') {
         const testAssign = paginateMeasuredItems(
