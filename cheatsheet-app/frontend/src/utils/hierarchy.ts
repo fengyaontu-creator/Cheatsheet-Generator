@@ -128,3 +128,48 @@ function flattenChildren(
     }
   }
 }
+
+/**
+ * Enhance mindmap atom keepWithNext flags so entire subtrees that fit on a
+ * single page stay together. Atoms are emitted in DFS pre-order, so a node's
+ * subtree is a contiguous slice [i, i + subtreeSize). Subtrees too tall to
+ * fit fall back to the per-atom flag from flattenTreeToAtoms (which only
+ * binds a parent to its first child), and the paginator force-fits from there.
+ */
+export function computeSubtreeKeepWithNext(
+  atoms: MindmapAtom[],
+  heights: number[],
+  margins: number[],
+  capacity: number,
+): boolean[] {
+  const kwn = atoms.map((a) => a.keepWithNext)
+  if (atoms.length === 0) return kwn
+
+  // Mirror findBestPartition's segment-height formula: trailing margin of the
+  // last item doesn't occupy vertical space at the column/page bottom.
+  const prefix: number[] = [0]
+  for (const h of heights) prefix.push(prefix[prefix.length - 1] + h)
+
+  const sizeCache = new Map<string, number>()
+  function subtreeAtomCount(node: TreeNode): number {
+    const cached = sizeCache.get(node.id)
+    if (cached !== undefined) return cached
+    let n = 1
+    for (const child of node.children) n += subtreeAtomCount(child)
+    sizeCache.set(node.id, n)
+    return n
+  }
+
+  for (let i = 0; i < atoms.length; i++) {
+    const size = subtreeAtomCount(atoms[i].node)
+    if (size <= 1) continue
+    const end = i + size
+    if (end > atoms.length) continue
+    const subtreeHeight = prefix[end] - prefix[i] - margins[end - 1]
+    if (subtreeHeight <= capacity) {
+      for (let j = i; j < end - 1; j++) kwn[j] = true
+    }
+  }
+
+  return kwn
+}
