@@ -2,6 +2,9 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGenerationJob } from '../../hooks/useGenerationJob'
 import GenerationOverlay from './GenerationOverlay'
+import WhipOverlay from './WhipOverlay'
+
+const WHIP_DELAY_MS = 10_000
 
 type Mode = 'files' | 'text'
 type Language = 'en' | 'zh' | 'mixed'
@@ -45,6 +48,7 @@ export default function UploadPanel() {
   const [validationError, setValidationError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const job = useGenerationJob()
+  const [whipActive, setWhipActive] = useState(false)
 
   const loading = job.status === 'pending' || job.status === 'running'
 
@@ -55,6 +59,15 @@ export default function UploadPanel() {
       navigate('/editor', { state: { project: job.project } })
     }
   }, [job.status, job.project, navigate])
+
+  useEffect(() => {
+    if (!loading) {
+      setWhipActive(false)
+      return
+    }
+    const id = window.setTimeout(() => setWhipActive(true), WHIP_DELAY_MS)
+    return () => window.clearTimeout(id)
+  }, [loading])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -245,6 +258,7 @@ export default function UploadPanel() {
         error={job.error}
         onDismiss={job.reset}
       />
+      <WhipOverlay active={whipActive} />
     </form>
   )
 }
