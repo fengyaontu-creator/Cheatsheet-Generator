@@ -1,6 +1,10 @@
 import type { CheatsheetProject } from '../types/block'
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+// Empty string → fetch uses relative paths like `/api/ingest`. In dev the
+// Vite dev server proxies `/api` to the backend (see vite.config.ts); in
+// prod nginx proxies the same prefix to the uvicorn port. Override with
+// `VITE_API_URL=http://localhost:8000` if you ever want to bypass the proxy.
+const API_URL = import.meta.env.VITE_API_URL ?? ''
 
 export type JobStage = 'comprehend' | 'topics' | 'outline' | 'compress'
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed'

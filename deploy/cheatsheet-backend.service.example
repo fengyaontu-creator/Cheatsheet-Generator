@@ -1,0 +1,44 @@
+# systemd unit for cheatsheet backend. NOT ENABLED by default.
+#
+# The initial deploy uses `nohup uvicorn` from deploy.sh (matches the
+# trading-app pattern). Switch to this unit when you want:
+#   - auto-restart on crash
+#   - start on boot
+#   - memory/task caps so Playwright OOM can't take the VPS down
+#
+# To enable:
+#   sudo cp deploy/cheatsheet-backend.service.example /etc/systemd/system/cheatsheet-backend.service
+#   # stop the current nohup process + remove the PID file
+#   kill "$(cat /opt/cheatsheet/backend.pid)" && rm /opt/cheatsheet/backend.pid
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now cheatsheet-backend
+# Then edit deploy.sh so `deploy_backend` calls
+#   sudo systemctl restart cheatsheet-backend
+# instead of the kill-and-nohup block.
+
+[Unit]
+Description=Cheatsheet backend (FastAPI + uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cheatsheet/cheatsheet-app/backend
+EnvironmentFile=/opt/cheatsheet/.env
+ExecStart=/opt/cheatsheet/cheatsheet-app/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
+Restart=on-failure
+RestartSec=5
+
+# 2 GB VPS shared with trading-app: leave Chromium some headroom but
+# don't let it eat the whole box.
+MemoryMax=900M
+TasksMax=200
+
+# Basic hardening. Playwright writes to /tmp (PrivateTmp gives it an
+# isolated one) and to the project .cache dir (ReadWritePaths).
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/cheatsheet
+
+[Install]
+WantedBy=multi-user.target
