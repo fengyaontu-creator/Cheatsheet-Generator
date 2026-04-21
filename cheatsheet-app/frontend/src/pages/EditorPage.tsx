@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { sampleProject } from '../mock/sampleProject'
 import type {
   Block,
+  BlockDraft,
   CheatsheetProject,
   ListLayout,
   MindmapLayout,
@@ -34,6 +35,21 @@ const DEFAULT_MINDMAP_LAYOUT: MindmapLayout = {
 
 const STORAGE_KEY = 'cheatsheet_editor_project'
 const HIDDEN_KEY = 'cheatsheet_editor_hidden'
+
+function applyDraft(block: Block, draft: BlockDraft): Block {
+  const textChanged = draft.title !== block.title || draft.content !== block.content
+  return {
+    ...block,
+    title: draft.title,
+    content: draft.content,
+    type: draft.type,
+    importance: draft.importance,
+    latex: draft.latex ? draft.latex : undefined,
+    image_caption: draft.image_caption ? draft.image_caption : undefined,
+    content_short: textChanged ? undefined : block.content_short,
+    content_ultra_short: textChanged ? undefined : block.content_ultra_short,
+  }
+}
 
 function loadInitialProject(injected: CheatsheetProject | undefined): CheatsheetProject {
   // sessionStorage wins when present — it's the freshest state, including edits.
@@ -69,7 +85,7 @@ export default function EditorPage() {
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(loadHiddenIds)
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
-  const [draft, setDraft] = useState<{ title: string; content: string } | null>(null)
+  const [draft, setDraft] = useState<BlockDraft | null>(null)
   const [exporting, setExporting] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -98,20 +114,16 @@ export default function EditorPage() {
 
   // Debounced commit of in-progress block edits into project.blocks.
   // Keeping a separate draft avoids re-fitting the A4 preview on every keystroke.
-  // content_short / content_ultra_short are nulled so the density engine falls
-  // back to the edited full content instead of showing a stale compressed variant.
+  // content_short / content_ultra_short are nulled only when title or content
+  // changed, so editing importance/type/latex/caption preserves the cached
+  // compressed variants from Stage 3.
   useEffect(() => {
     if (!editingBlockId || !draft) return
     const id = editingBlockId
-    const { title, content } = draft
     const t = window.setTimeout(() => {
       setProject((p) => ({
         ...p,
-        blocks: p.blocks.map((b) =>
-          b.id === id
-            ? { ...b, title, content, content_short: undefined, content_ultra_short: undefined }
-            : b,
-        ),
+        blocks: p.blocks.map((b) => (b.id === id ? applyDraft(b, draft) : b)),
       }))
     }, 200)
     return () => window.clearTimeout(t)
@@ -288,10 +300,17 @@ export default function EditorPage() {
     const block = project.blocks.find((b) => b.id === id)
     if (!block) return
     setEditingBlockId(id)
-    setDraft({ title: block.title, content: block.content })
+    setDraft({
+      title: block.title,
+      content: block.content,
+      type: block.type,
+      importance: block.importance,
+      latex: block.latex ?? '',
+      image_caption: block.image_caption ?? '',
+    })
   }
 
-  function updateDraft(patch: Partial<{ title: string; content: string }>) {
+  function updateDraft(patch: Partial<BlockDraft>) {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev))
   }
 
@@ -299,14 +318,9 @@ export default function EditorPage() {
     // Flush synchronously so the final keystroke can't be dropped by the 200ms debounce.
     if (editingBlockId && draft) {
       const id = editingBlockId
-      const { title, content } = draft
       setProject((p) => ({
         ...p,
-        blocks: p.blocks.map((b) =>
-          b.id === id
-            ? { ...b, title, content, content_short: undefined, content_ultra_short: undefined }
-            : b,
-        ),
+        blocks: p.blocks.map((b) => (b.id === id ? applyDraft(b, draft) : b)),
       }))
     }
     setEditingBlockId(null)

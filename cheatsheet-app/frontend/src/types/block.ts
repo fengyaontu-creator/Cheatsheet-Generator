@@ -71,3 +71,12 @@ export interface CheatsheetProject {
 }
 
 export type DensityVersion = 'full' | 'short' | 'ultra_short'
+
+export interface BlockDraft {
+  title: string
+  content: string
+  type: BlockType
+  importance: number
+  latex: string
+  image_caption: string
+}

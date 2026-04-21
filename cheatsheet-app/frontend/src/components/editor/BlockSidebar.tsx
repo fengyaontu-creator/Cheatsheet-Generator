@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import type { Block } from '../../types/block'
+import type { Block, BlockDraft } from '../../types/block'
 import { collectDescendantIds } from '../../utils/hierarchy'
 import BlockCard from './BlockCard'
 
@@ -8,14 +8,14 @@ interface Props {
   hiddenIds: Set<string>
   selectedBlockId?: string | null
   editingBlockId?: string | null
-  draft?: { title: string; content: string } | null
+  draft?: BlockDraft | null
   onMove: (id: string, dir: -1 | 1) => void
   onDelete: (id: string) => void
   onRestore: (id: string) => void
   onToggleLock: (id: string) => void
   onSetImageWidth?: (id: string, width: 'small' | 'medium' | 'full') => void
   onStartEdit?: (id: string) => void
-  onUpdateDraft?: (patch: Partial<{ title: string; content: string }>) => void
+  onUpdateDraft?: (patch: Partial<BlockDraft>) => void
   onEndEdit?: () => void
 }
 
