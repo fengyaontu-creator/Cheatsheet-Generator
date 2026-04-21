@@ -6,10 +6,15 @@ interface Props {
   index: number
   total: number
   isSelected?: boolean
+  isEditing?: boolean
+  draft?: { title: string; content: string } | null
   onMove: (id: string, dir: -1 | 1) => void
   onDelete: (id: string) => void
   onToggleLock: (id: string) => void
   onSetImageWidth?: (id: string, width: 'small' | 'medium' | 'full') => void
+  onStartEdit?: (id: string) => void
+  onUpdateDraft?: (patch: Partial<{ title: string; content: string }>) => void
+  onEndEdit?: () => void
 }
 
 const IMAGE_SIZE_OPTIONS: Array<{ value: 'small' | 'medium' | 'full'; label: string }> = [
@@ -30,22 +35,98 @@ const typeColors: Record<Block['type'], string> = {
   image: '#0550ae',
 }
 
-export default function BlockCard({ block, index, total, isSelected = false, onMove, onDelete, onToggleLock, onSetImageWidth }: Props) {
+export default function BlockCard({
+  block,
+  index,
+  total,
+  isSelected = false,
+  isEditing = false,
+  draft = null,
+  onMove,
+  onDelete,
+  onToggleLock,
+  onSetImageWidth,
+  onStartEdit,
+  onUpdateDraft,
+  onEndEdit,
+}: Props) {
   const color = typeColors[block.type]
-  const cardStyle = isSelected ? { ...styles.card, ...styles.cardSelected } : styles.card
   const isImage = block.type === 'image'
+  const editable = isEditing && !isImage && draft !== null
+  const cardStyle = isSelected
+    ? { ...styles.card, ...styles.cardSelected }
+    : editable
+    ? { ...styles.card, ...styles.cardEditing }
+    : styles.card
   const currentWidth = block.image_width ?? 'full'
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Escape' && editable && onEndEdit) {
+      e.stopPropagation()
+      onEndEdit()
+    }
+  }
+
+  function handleBlur(e: React.FocusEvent<HTMLDivElement>) {
+    if (!editable || !onEndEdit) return
+    const next = e.relatedTarget as Node | null
+    // Focus moving between title input and content textarea inside the card
+    // should NOT trigger exit — only focus leaving the card boundary does.
+    if (next && e.currentTarget.contains(next)) return
+    onEndEdit()
+  }
+
+  function handleDoubleClick() {
+    if (isImage || editable || !onStartEdit) return
+    onStartEdit(block.id)
+  }
+
+  const titleValue = editable ? draft!.title : block.title
+  const contentValue = editable ? draft!.content : block.content_short ?? block.content
+  const textareaRows = Math.min(
+    10,
+    Math.max(3, (editable ? draft!.content : '').split('\n').length),
+  )
+
   return (
-    <div style={cardStyle} data-sidebar-block-id={block.id}>
+    <div
+      style={cardStyle}
+      data-sidebar-block-id={block.id}
+      onKeyDown={handleKeyDown}
+      onBlur={handleBlur}
+    >
       <div style={styles.head}>
         <span style={{ ...styles.typePill, background: color }}>{block.type}</span>
         <span style={styles.importance}>★ {block.importance.toFixed(2)}</span>
       </div>
-      <div style={styles.title}>{block.title}</div>
+      {editable ? (
+        <input
+          type="text"
+          value={titleValue}
+          onChange={(e) => onUpdateDraft?.({ title: e.target.value })}
+          autoFocus
+          style={styles.titleInput}
+          placeholder="Block title"
+        />
+      ) : (
+        <div style={styles.title} onDoubleClick={handleDoubleClick}>
+          {block.title}
+        </div>
+      )}
       {isImage && block.image_data ? (
         <img src={block.image_data} alt={block.title} style={styles.thumbPreview} />
+      ) : editable ? (
+        <textarea
+          value={contentValue}
+          onChange={(e) => onUpdateDraft?.({ content: e.target.value })}
+          rows={textareaRows}
+          style={styles.contentTextarea}
+          placeholder="Block content"
+        />
       ) : (
-        <div style={styles.preview}>{block.content_short ?? block.content}</div>
+        <div style={styles.preview} onDoubleClick={handleDoubleClick}>
+          {block.content_short ?? block.content}
+        </div>
       )}
       {block.source_ref && <div style={styles.source}>{block.source_ref}</div>}
       {isImage && onSetImageWidth && (
@@ -121,6 +202,10 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#ddf4ff',
     boxShadow: '0 0 0 2px rgba(9,105,218,0.2)',
   },
+  cardEditing: {
+    borderColor: '#bf8700',
+    boxShadow: '0 0 0 2px rgba(191,135,0,0.2)',
+  },
   head: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -146,6 +231,19 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#1f2328',
     marginBottom: 4,
   },
+  titleInput: {
+    width: '100%',
+    fontWeight: 600,
+    fontSize: 13,
+    color: '#1f2328',
+    marginBottom: 4,
+    padding: '4px 6px',
+    border: '1px solid #d0d7de',
+    borderRadius: 4,
+    background: '#fff',
+    boxSizing: 'border-box',
+    fontFamily: 'inherit',
+  },
   preview: {
     color: '#57606a',
     fontSize: 11,
@@ -154,6 +252,19 @@ const styles: Record<string, React.CSSProperties> = {
     display: '-webkit-box',
     WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
+  },
+  contentTextarea: {
+    width: '100%',
+    color: '#1f2328',
+    fontSize: 11,
+    lineHeight: 1.5,
+    padding: '6px 8px',
+    border: '1px solid #d0d7de',
+    borderRadius: 4,
+    background: '#fff',
+    boxSizing: 'border-box',
+    fontFamily: 'inherit',
+    resize: 'vertical',
   },
   thumbPreview: {
     maxWidth: '100%',

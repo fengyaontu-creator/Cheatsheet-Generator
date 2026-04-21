@@ -7,11 +7,16 @@ interface Props {
   blocks: Block[]
   hiddenIds: Set<string>
   selectedBlockId?: string | null
+  editingBlockId?: string | null
+  draft?: { title: string; content: string } | null
   onMove: (id: string, dir: -1 | 1) => void
   onDelete: (id: string) => void
   onRestore: (id: string) => void
   onToggleLock: (id: string) => void
   onSetImageWidth?: (id: string, width: 'small' | 'medium' | 'full') => void
+  onStartEdit?: (id: string) => void
+  onUpdateDraft?: (patch: Partial<{ title: string; content: string }>) => void
+  onEndEdit?: () => void
 }
 
 interface HiddenGroup {
@@ -24,11 +29,16 @@ export default function BlockSidebar({
   blocks,
   hiddenIds,
   selectedBlockId = null,
+  editingBlockId = null,
+  draft = null,
   onMove,
   onDelete,
   onRestore,
   onToggleLock,
   onSetImageWidth,
+  onStartEdit,
+  onUpdateDraft,
+  onEndEdit,
 }: Props) {
   const visible = blocks.filter((b) => !hiddenIds.has(b.id))
   const hiddenGroups = useMemo(() => deriveHiddenGroups(blocks, hiddenIds), [blocks, hiddenIds])
@@ -42,19 +52,27 @@ export default function BlockSidebar({
         <span style={styles.count}>{visible.length}</span>
       </div>
       <div style={styles.list}>
-        {visible.map((b, i) => (
-          <BlockCard
-            key={b.id}
-            block={b}
-            index={i}
-            total={visible.length}
-            isSelected={b.id === selectedBlockId}
-            onMove={onMove}
-            onDelete={onDelete}
-            onToggleLock={onToggleLock}
-            onSetImageWidth={onSetImageWidth}
-          />
-        ))}
+        {visible.map((b, i) => {
+          const isEditing = b.id === editingBlockId
+          return (
+            <BlockCard
+              key={b.id}
+              block={b}
+              index={i}
+              total={visible.length}
+              isSelected={b.id === selectedBlockId}
+              isEditing={isEditing}
+              draft={isEditing ? draft : null}
+              onMove={onMove}
+              onDelete={onDelete}
+              onToggleLock={onToggleLock}
+              onSetImageWidth={onSetImageWidth}
+              onStartEdit={onStartEdit}
+              onUpdateDraft={onUpdateDraft}
+              onEndEdit={onEndEdit}
+            />
+          )
+        })}
         {hiddenGroups.length > 0 && (
           <div style={styles.hiddenSection}>
             <button
