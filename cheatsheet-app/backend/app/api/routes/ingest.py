@@ -4,6 +4,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from app.services import generation_jobs
+from app.services.daily_cap import check_and_increment as check_daily_cap
 from app.services.extractor import extract_project
 from app.services.file_reader import (
     extract_text_from_files,
@@ -100,6 +101,7 @@ async def ingest_files(
     Images are collected separately for future multimodal use but do NOT
     participate in the Stage 0-3 pipeline in V1.
     """
+    await check_daily_cap()
     source_text, _images = await _prepare_source_from_files(files)
     lang = _normalize_language(language)
 
@@ -126,6 +128,7 @@ async def ingest_text(
     debug: bool = Query(False),
 ):
     """Accept pasted text and feed it into the extraction pipeline."""
+    await check_daily_cap()
     source_text = _validate_text_source(body.source_text)
     lang = _normalize_language(body.language)
 
@@ -148,6 +151,7 @@ async def ingest_files_job(
     debug: bool = Query(False),
 ):
     """Fire-and-forget file ingest. Returns a job_id to poll."""
+    await check_daily_cap()
     source_text, _images = await _prepare_source_from_files(files)
     lang = _normalize_language(language)
     job_id = await generation_jobs.create_job()
@@ -171,6 +175,7 @@ async def ingest_text_job(
     debug: bool = Query(False),
 ):
     """Fire-and-forget text ingest. Returns a job_id to poll."""
+    await check_daily_cap()
     source_text = _validate_text_source(body.source_text)
     lang = _normalize_language(body.language)
     job_id = await generation_jobs.create_job()
