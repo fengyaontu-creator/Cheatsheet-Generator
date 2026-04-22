@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services import generation_jobs
+from app.services import daily_cap, generation_jobs
 
 
 @pytest.fixture(autouse=True)
@@ -19,3 +19,11 @@ def reset_job_registry():
     yield
     generation_jobs._jobs.clear()
     generation_jobs._tasks.clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_daily_cap():
+    """Wipe the daily-cap counter around every test so cap behaviour is deterministic."""
+    daily_cap._counter.clear()
+    yield
+    daily_cap._counter.clear()

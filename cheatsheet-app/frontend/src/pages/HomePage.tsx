@@ -1,41 +1,53 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import Footer from '../components/Footer'
 
 export default function HomePage() {
   return (
-    <div style={styles.wrap}>
-      <div style={styles.inner}>
-        <h1 style={styles.title}>Cheatsheet</h1>
-        <p style={styles.tagline}>
-          Turn lecture materials into print-ready exam cheatsheets that actually fit the page.
-        </p>
+    <div style={styles.page}>
+      <div style={styles.wrap}>
+        <div style={styles.inner}>
+          <h1 style={styles.title}>Cheatsheet</h1>
+          <p style={styles.tagline}>
+            Turn lecture materials into print-ready exam cheatsheets that actually fit the page.
+          </p>
 
-        <ul style={styles.features}>
-          <li>Exam-focused structured blocks, not prose summaries</li>
-          <li>Program-controlled A4 layout — you tune parameters, not prompts</li>
-          <li>Real-time preview, instant re-flow on every change</li>
-        </ul>
+          <ul style={styles.features}>
+            <li>Exam-focused structured blocks, not prose summaries</li>
+            <li>Program-controlled A4 layout — you tune parameters, not prompts</li>
+            <li>Real-time preview, instant re-flow on every change</li>
+          </ul>
 
-        <div style={styles.ctaRow}>
-          <Link to="/create" style={styles.cta}>
-            Create from text →
-          </Link>
-          <Link to="/editor" style={styles.ctaSecondary}>
-            Open demo editor
-          </Link>
+          <div style={styles.ctaRow}>
+            <Link to="/create" style={styles.cta}>
+              Create from text →
+            </Link>
+            <Link to="/editor" style={styles.ctaSecondary}>
+              Open demo editor
+            </Link>
+            <Link to="/pricing" style={styles.ctaGhost}>
+              Pricing
+            </Link>
+          </div>
+
+          <p style={styles.note}>
+            Paste lecture notes or markdown · LLM extracts structured blocks · tune layout live
+          </p>
         </div>
-
-        <p style={styles.note}>
-          Paste lecture notes or markdown · LLM extracts structured blocks · tune layout live
-        </p>
       </div>
+      <Footer />
     </div>
   )
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  wrap: {
+  page: {
     minHeight: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  wrap: {
+    flex: 1,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -84,6 +96,13 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #d0d7de',
     borderRadius: 8,
     fontWeight: 600,
+    textDecoration: 'none',
+  },
+  ctaGhost: {
+    display: 'inline-block',
+    padding: '12px 22px',
+    color: '#57606a',
+    fontWeight: 500,
     textDecoration: 'none',
   },
   note: {
