@@ -45,7 +45,7 @@ The product principle is **controlled-layout AI**: the LLM outputs structured co
 ### Backend
 
 - FastAPI + Pydantic
-- OpenAI SDK pointing at OpenRouter
+- OpenAI SDK pointing at OpenRouter or Google's OpenAI-compatible Gemini endpoint
 - markitdown (multi-format document parsing)
 - Playwright (headless Chromium, PDF export)
 - Per-stage content-hash cache under `app/.cache/extractor/` (prompt changes auto-invalidate)
@@ -73,7 +73,23 @@ OPENROUTER_API_KEY=your_key_here
 OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
 ```
 
-Optional per-stage model overrides (`OPENROUTER_MODEL_STAGE0` … `STAGE3`) are documented in `.env.example`.
+Optional per-stage provider/model overrides are documented in `.env.example`.
+For example, cheap stages can use Google Gemini directly while the outline
+stage uses Claude through OpenRouter:
+
+```env
+GOOGLE_API_KEY=your_google_key
+OPENROUTER_API_KEY=your_openrouter_key
+
+LLM_PROVIDER_STAGE0=google
+LLM_MODEL_STAGE0=gemini-2.5-flash
+LLM_PROVIDER_STAGE1=google
+LLM_MODEL_STAGE1=gemini-2.5-flash-lite
+LLM_PROVIDER_STAGE2=openrouter
+LLM_MODEL_STAGE2=anthropic/claude-sonnet-4.5
+LLM_PROVIDER_STAGE3=google
+LLM_MODEL_STAGE3=gemini-2.5-flash-lite
+```
 
 ### 2. Frontend
 
