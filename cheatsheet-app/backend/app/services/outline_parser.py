@@ -17,6 +17,10 @@ VALID_COMPRESSIBILITY = {"high", "medium", "low"}
 
 _HEADING_RE = re.compile(r"^(#{2,6})\s+(.+)$")
 _META_RE = re.compile(r"^>\s*(.+)$")
+_LATEX_RE = re.compile(
+    r"^\s*(?:[-*+]\s*)?(?:\*\*)?\s*latex\s*(?:\*\*)?\s*:\s*(?:\*\*)?\s*(.+?)\s*$",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -180,14 +184,27 @@ def _parse_content_lines(
     latex: str | None = None
 
     for line in lines:
-        stripped = line.strip()
-        if stripped.lower().startswith("**latex:**"):
-            latex = stripped[len("**latex:**") :].strip()
+        latex_m = _LATEX_RE.match(line)
+        if latex_m:
+            latex = _clean_latex(latex_m.group(1))
         else:
             body_parts.append(line)
 
     body = "\n".join(body_parts).strip() or None
     return body, latex
+
+
+def _clean_latex(text: str) -> str | None:
+    s = text.strip()
+    if s.startswith("$$") and s.endswith("$$") and len(s) >= 4:
+        s = s[2:-2].strip()
+    elif s.startswith("$") and s.endswith("$") and len(s) >= 2:
+        s = s[1:-1].strip()
+    elif s.startswith(r"\(") and s.endswith(r"\)") and len(s) >= 4:
+        s = s[2:-2].strip()
+    elif s.startswith(r"\[") and s.endswith(r"\]") and len(s) >= 4:
+        s = s[2:-2].strip()
+    return s or None
 
 
 def _slugify(text: str) -> str:
