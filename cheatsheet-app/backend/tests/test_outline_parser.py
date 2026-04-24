@@ -77,6 +77,33 @@ Solves ax^2 + bx + c = 0.
     assert "latex" not in b["content"].lower()
 
 
+def test_latex_line_accepts_bullet_and_case_variants():
+    md = """## Token Ratio
+> formula | 0.8 | medium
+
+Approximate conversion from tokens to words.
+- **LaTeX:** $\\text{words} \\approx \\frac{\\text{tokens}}{1.3}$
+"""
+    result = parse_outline(md, topic_id="t_math")
+    b = result.blocks[0]
+    assert b["latex"] == "\\text{words} \\approx \\frac{\\text{tokens}}{1.3}"
+    assert "Approximate conversion" in b["content"]
+    assert not result.warnings
+
+
+def test_latex_line_accepts_plain_label_and_display_delimiters():
+    md = """## F Score
+> formula | 0.9 | low
+
+Combines precision and recall.
+latex: $$F_1 = \\frac{2PR}{P + R}$$
+"""
+    result = parse_outline(md, topic_id="t_math")
+    b = result.blocks[0]
+    assert b["latex"] == "F_1 = \\frac{2PR}{P + R}"
+    assert not result.warnings
+
+
 # ---------------------------------------------------------------------------
 # Hierarchy
 # ---------------------------------------------------------------------------
