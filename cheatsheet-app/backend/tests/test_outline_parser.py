@@ -54,6 +54,9 @@ def test_meta_order_insensitive():
     """Parser must accept metadata parts in any order."""
     md = """## Foo
 > 0.3 | high | formula
+
+Formula body.
+**latex:** x = y
 """
     result = parse_outline(md, topic_id="t")
     b = result.blocks[0]
@@ -224,14 +227,30 @@ body.
     assert any("no valid block type" in w for w in result.warnings)
 
 
-def test_formula_without_latex_warns():
+def test_formula_without_latex_extracts_inline_math():
+    md = """## Newton's Second Law
+> formula | 0.8 | medium
+
+Force equals mass times acceleration: $F = ma$.
+"""
+    result = parse_outline(md, topic_id="t")
+    b = result.blocks[0]
+    assert b["type"] == "formula"
+    assert b["latex"] == "F = ma"
+    assert not result.warnings
+
+
+def test_formula_without_any_latex_demotes_to_definition():
     md = """## Only Formula
 > formula | 0.8 | medium
 
 Words only — no equation.
 """
     result = parse_outline(md, topic_id="t")
-    assert any("formula block has no" in w for w in result.warnings)
+    b = result.blocks[0]
+    assert b["type"] == "definition"
+    assert b["latex"] is None
+    assert not result.warnings
 
 
 def test_importance_out_of_range_is_clamped():

@@ -36,24 +36,52 @@ def _build_user_content(
     return parts
 
 
-def _resolve_provider() -> tuple[str, str, str, str, dict[str, str]]:
+def _env_name(base: str, stage: str | None = None) -> str:
+    return f"{base}_{stage}" if stage else base
+
+
+def _get_stage_env(base: str, stage: str | None = None) -> str | None:
+    if stage:
+        value = os.getenv(_env_name(base, stage))
+        if value is not None and value.strip():
+            return value.strip()
+    value = os.getenv(base)
+    if value is not None and value.strip():
+        return value.strip()
+    return None
+
+
+def _resolve_provider(stage: str | None = None) -> tuple[str, str, str, str, dict[str, str]]:
     """Return (provider, base_url, api_key, default_model, extra_headers)."""
-    provider = (os.getenv("LLM_PROVIDER") or "openrouter").strip().lower()
+    provider = (_get_stage_env("LLM_PROVIDER", stage) or "openrouter").strip().lower()
     if provider == "google":
         api_key = os.getenv("GOOGLE_API_KEY") or ""
         if not api_key or api_key.startswith("REPLACE"):
             raise RuntimeError(
                 "GOOGLE_API_KEY not set. Fill it in .env or switch LLM_PROVIDER=openrouter."
             )
-        default_model = os.getenv("LLM_MODEL") or DEFAULT_MODEL_GOOGLE
+        default_model = (
+            _get_stage_env("LLM_MODEL", stage)
+            or _get_stage_env("GOOGLE_MODEL", stage)
+            or DEFAULT_MODEL_GOOGLE
+        )
         return provider, GOOGLE_BASE_URL, api_key, default_model, {}
+    if provider != "openrouter":
+        raise RuntimeError(
+            f"Unsupported LLM_PROVIDER{('_' + stage) if stage else ''}={provider!r}. "
+            "Use 'openrouter' or 'google'."
+        )
     # default: openrouter
     api_key = os.getenv("OPENROUTER_API_KEY") or ""
     if not api_key or api_key.startswith("sk-or-v1-REPLACE"):
         raise RuntimeError(
             "OPENROUTER_API_KEY not set. Copy .env.example to .env and fill in your key."
         )
-    default_model = os.getenv("LLM_MODEL") or os.getenv("OPENROUTER_MODEL") or DEFAULT_MODEL_OPENROUTER
+    default_model = (
+        _get_stage_env("LLM_MODEL", stage)
+        or _get_stage_env("OPENROUTER_MODEL", stage)
+        or DEFAULT_MODEL_OPENROUTER
+    )
     headers = {
         "HTTP-Referer": "http://localhost:5173",
         "X-Title": "cheatsheet-app",
@@ -62,8 +90,9 @@ def _resolve_provider() -> tuple[str, str, str, str, dict[str, str]]:
 
 
 class LLMClient:
-    def __init__(self) -> None:
-        provider, base_url, api_key, default_model, extra_headers = _resolve_provider()
+    def __init__(self, stage: str | None = None) -> None:
+        provider, base_url, api_key, default_model, extra_headers = _resolve_provider(stage)
+        self.stage = stage
         self.provider = provider
         self.default_model = default_model
         self.extra_headers = extra_headers

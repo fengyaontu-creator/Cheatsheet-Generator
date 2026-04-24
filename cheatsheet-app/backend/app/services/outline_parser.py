@@ -21,6 +21,12 @@ _LATEX_RE = re.compile(
     r"^\s*(?:[-*+]\s*)?(?:\*\*)?\s*latex\s*(?:\*\*)?\s*:\s*(?:\*\*)?\s*(.+?)\s*$",
     re.IGNORECASE,
 )
+_INLINE_LATEX_PATTERNS = [
+    re.compile(r"\$\$(.+?)\$\$"),
+    re.compile(r"\\\[(.+?)\\\]"),
+    re.compile(r"\\\((.+?)\\\)"),
+    re.compile(r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)"),
+]
 
 
 @dataclass
@@ -53,12 +59,13 @@ def parse_outline(
         if current is None:
             return
         body, latex = _parse_content_lines(content_lines)
+        if current.get("type") == "formula" and not latex and body:
+            latex = _extract_inline_latex(body)
+        if current.get("type") == "formula" and not latex:
+            current["type"] = "definition"
         current["content"] = body or ""
         current["latex"] = latex
 
-        # Warn on formula blocks without latex
-        if current.get("type") == "formula" and not latex:
-            warnings.append(f"block '{current_title}': formula block has no **latex:** field")
         # Warn on empty body
         if not body:
             warnings.append(f"block '{current_title}': empty content body")
@@ -205,6 +212,14 @@ def _clean_latex(text: str) -> str | None:
     elif s.startswith(r"\[") and s.endswith(r"\]") and len(s) >= 4:
         s = s[2:-2].strip()
     return s or None
+
+
+def _extract_inline_latex(text: str) -> str | None:
+    for pattern in _INLINE_LATEX_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return _clean_latex(match.group(0))
+    return None
 
 
 def _slugify(text: str) -> str:

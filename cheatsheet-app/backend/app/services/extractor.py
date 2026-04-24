@@ -85,6 +85,14 @@ class StageModels:
     compress: str
 
 
+@dataclass(frozen=True)
+class StageClients:
+    comprehend: LLMClient
+    topics: LLMClient
+    outlines: LLMClient
+    compress: LLMClient
+
+
 # ---------------------------------------------------------------------------
 # Pipeline orchestrator
 # ---------------------------------------------------------------------------
@@ -98,10 +106,10 @@ async def extract_project(
     images: list[bytes] | None = None,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> CheatsheetProject:
-    client = LLMClient()
     focus = user_focus.strip() or "none"
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"])
-    stage_models = _resolve_stage_models(client.default_model)
+    stage_clients = _resolve_stage_clients()
+    stage_models = _resolve_stage_models(stage_clients)
     warnings: list[str] = []
 
     def _emit(event: dict[str, Any]) -> None:
@@ -114,7 +122,12 @@ async def extract_project(
     # Stage 0: comprehension (images only used here -- digest carries info forward)
     _emit({"stage": "comprehend"})
     comprehension = await _run_comprehension(
-        client, source_text, focus, lang_instruction, stage_models.comprehend, images
+        stage_clients.comprehend,
+        source_text,
+        focus,
+        lang_instruction,
+        stage_models.comprehend,
+        images,
     )
     if debug:
         logger.info("=== Stage 0: Comprehension ===\n%s", comprehension.summary[:2000])
@@ -124,7 +137,12 @@ async def extract_project(
     # Stage 1: topic extraction (digest authoritative + truncated raw for exact tokens)
     _emit({"stage": "topics"})
     topic_result = await _run_topic_extraction(
-        client, comprehension.summary, source_text, focus, lang_instruction, stage_models.topics
+        stage_clients.topics,
+        comprehension.summary,
+        source_text,
+        focus,
+        lang_instruction,
+        stage_models.topics,
     )
     if debug:
         topic_summary = [_format_topic_debug_summary(t) for t in topic_result.topics]
@@ -142,7 +160,7 @@ async def extract_project(
     # Stage 2: outline extraction per topic (digest + per-topic raw excerpts)
     _emit({"stage": "outline", "topics_total": len(topics), "topics_done": 0})
     outline_result = await _run_outline_extraction(
-        client,
+        stage_clients.outlines,
         comprehension.summary,
         source_text,
         focus,
@@ -160,7 +178,7 @@ async def extract_project(
     # Stage 3: density compression
     _emit({"stage": "compress"})
     blocks = await _run_compression(
-        client,
+        stage_clients.compress,
         outline_result.blocks,
         topics,
         focus,
@@ -743,12 +761,21 @@ def _compress_topic_blocks(
     ]
 
 
-def _resolve_stage_models(default_model: str) -> StageModels:
+def _resolve_stage_clients() -> StageClients:
+    return StageClients(
+        comprehend=LLMClient(stage="STAGE0"),
+        topics=LLMClient(stage="STAGE1"),
+        outlines=LLMClient(stage="STAGE2"),
+        compress=LLMClient(stage="STAGE3"),
+    )
+
+
+def _resolve_stage_models(stage_clients: StageClients) -> StageModels:
     return StageModels(
-        comprehend=os.getenv("OPENROUTER_MODEL_STAGE0", default_model),
-        topics=os.getenv("OPENROUTER_MODEL_STAGE1", default_model),
-        outlines=os.getenv("OPENROUTER_MODEL_STAGE2", default_model),
-        compress=os.getenv("OPENROUTER_MODEL_STAGE3", default_model),
+        comprehend=stage_clients.comprehend.default_model,
+        topics=stage_clients.topics.default_model,
+        outlines=stage_clients.outlines.default_model,
+        compress=stage_clients.compress.default_model,
     )
 
 

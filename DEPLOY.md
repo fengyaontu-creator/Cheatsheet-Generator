@@ -81,6 +81,23 @@ LLM_PROVIDER=openrouter
 LLM_MODEL=<whichever model you picked>
 ```
 
+For mixed per-stage routing, set both provider keys and override the stages
+explicitly. For example:
+
+```
+GOOGLE_API_KEY=<gemini key>
+OPENROUTER_API_KEY=<openrouter key>
+
+LLM_PROVIDER_STAGE0=google
+LLM_MODEL_STAGE0=gemini-2.5-flash
+LLM_PROVIDER_STAGE1=google
+LLM_MODEL_STAGE1=gemini-2.5-flash-lite
+LLM_PROVIDER_STAGE2=openrouter
+LLM_MODEL_STAGE2=anthropic/claude-sonnet-4.5
+LLM_PROVIDER_STAGE3=google
+LLM_MODEL_STAGE3=gemini-2.5-flash-lite
+```
+
 Keep `.env` out of git — already covered by the root `.gitignore`.
 
 ### 7. nginx server block
